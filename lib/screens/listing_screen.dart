@@ -1,357 +1,265 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
-import 'property_type_screen.dart';
+import '../services/api_service.dart';
+import 'upload_property_screen.dart';
+import 'edit_property_screen.dart';
 
-class ListingScreen extends StatefulWidget {
-  const ListingScreen({super.key});
-
+class ListingTab extends StatefulWidget {
+  final void Function(int) onSwitchTab;
+  const ListingTab({super.key, required this.onSwitchTab});
   @override
-  State<ListingScreen> createState() => _ListingScreenState();
+  State<ListingTab> createState() => _ListingTabState();
 }
 
-class _ListingScreenState extends State<ListingScreen> {
-  final List<Map<String, dynamic>> _listings = [
-    {
-      'name': 'Sunshine PG',
-      'type': 'PG Room',
-      'location': 'Sector 17, Chandigarh',
-      'price': '₹6,500 / month',
-      'rooms': 12,
-      'status': 'Active',
-      'icon': Icons.bed_rounded,
-    },
-    {
-      'name': 'Green Valley Guest House',
-      'type': 'Guest Room',
-      'location': 'Model Town, Ludhiana',
-      'price': '₹1,999 / night',
-      'rooms': 10,
-      'status': 'Under Review',
-      'icon': Icons.hotel_rounded,
-    },
-    {
-      'name': 'Plot No. 10 — Sector 5',
-      'type': 'Plot',
-      'location': 'Sector 5, Mohali',
-      'price': '₹75,000 total',
-      'rooms': 0,
-      'status': 'Active',
-      'icon': Icons.landscape_rounded,
-    },
-  ];
+class _ListingTabState extends State<ListingTab> {
+  List<dynamic> _properties = [];
+  bool _loading = true;
+  String _filter = 'all';
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final res = await ApiService.getMyProperties(
+        status: _filter == 'all' ? null : _filter,
+      );
+      if (mounted) setState(() {
+        _properties = res['properties'] as List? ?? [];
+        _loading = false;
+      });
+    } catch (_) { if (mounted) setState(() => _loading = false); }
+  }
+
+  String _filterLabel(String f) {
+    const map = {'all': 'All', 'active': 'Active', 'under_review': 'Under Review',
+                 'rejected': 'Rejected', 'inactive': 'Inactive'};
+    return map[f] ?? f;
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Column(
-          children: [
-            // ── App Bar ──
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('My Listings',
-                          style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.textDark)),
-                      SizedBox(height: 2),
-                      Text('Manage your properties',
-                          style: TextStyle(
-                              fontSize: 13, color: AppColors.textMuted)),
-                    ],
-                  ),
-                  GestureDetector(
-                    onTap: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const PropertyTypeScreen())),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.add_rounded, color: Colors.white, size: 18),
-                          SizedBox(width: 4),
-                          Text('Add New',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+        child: Column(children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 16, 8),
+            child: Row(children: [
+              const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('My Listings', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.textDark)),
+                Text('All your uploaded properties', style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+              ])),
+              IconButton(onPressed: _load, icon: const Icon(Icons.refresh_rounded, color: AppColors.primary)),
+              IconButton(
+                onPressed: () async {
+                  await Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const UploadPropertyScreen()));
+                  _load(); // refresh after upload
+                },
+                icon: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(8)),
+                  child: const Icon(Icons.add, color: Colors.white, size: 18),
+                ),
               ),
-            ),
-
-            // ── Filter Tabs ──
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              child: Row(
-                children: ['All', 'Active', 'Under Review', 'Inactive'].map((tab) {
-                  final isFirst = tab == 'All';
-                  return Container(
-                    margin: const EdgeInsets.only(right: 10),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: isFirst ? AppColors.primary : AppColors.surface,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                          color: isFirst ? AppColors.primary : AppColors.border),
-                    ),
-                    child: Text(tab,
-                        style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: isFirst ? Colors.white : AppColors.textMuted)),
-                  );
-                }).toList(),
-              ),
-            ),
-
-            // ── Listings ──
-            Expanded(
-              child: _listings.isEmpty
-                  ? _buildEmpty()
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-                      itemCount: _listings.length,
-                      itemBuilder: (context, i) => _ListingCard(listing: _listings[i],
-                          onDelete: () => setState(() => _listings.removeAt(i))),
-                    ),
-            ),
-
-            _BottomNav(currentIndex: 1),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmpty() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 100, height: 100,
-            decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle),
-            child: const Icon(Icons.home_work_outlined, size: 48, color: AppColors.textLight),
+            ]),
           ),
-          const SizedBox(height: 16),
-          const Text('No listings yet',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textDark)),
-          const SizedBox(height: 8),
-          const Text('Tap "Add New" to upload your first property',
-              style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
-        ],
+
+          // Filter chips
+          SizedBox(
+            height: 40,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+              children: ['all', 'active', 'under_review', 'rejected', 'inactive'].map((f) {
+                final active = _filter == f;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () { setState(() => _filter = f); _load(); },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: active ? AppColors.primary : Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: active ? AppColors.primary : AppColors.border),
+                      ),
+                      child: Text(_filterLabel(f),
+                          style: TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w600,
+                            color: active ? Colors.white : AppColors.textDark,
+                          )),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+                : _properties.isEmpty
+                    ? _EmptyState(onUpload: () async {
+                        await Navigator.push(context,
+                            MaterialPageRoute(builder: (_) => const UploadPropertyScreen()));
+                        _load();
+                      })
+                    : RefreshIndicator(
+                        color: AppColors.primary,
+                        onRefresh: _load,
+                        child: ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                          itemCount: _properties.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 10),
+                          itemBuilder: (_, i) => _PropertyTile(
+                            property: _properties[i] as Map<String, dynamic>,
+                            onEdit: () async {
+                              await Navigator.push(context, MaterialPageRoute(
+                                builder: (_) => EditPropertyScreen(
+                                    property: _properties[i] as Map<String, dynamic>),
+                              ));
+                              _load();
+                            },
+                          ),
+                        ),
+                      ),
+          ),
+        ]),
       ),
     );
   }
 }
 
-class _ListingCard extends StatelessWidget {
-  final Map<String, dynamic> listing;
-  final VoidCallback onDelete;
+class _EmptyState extends StatelessWidget {
+  final VoidCallback onUpload;
+  const _EmptyState({required this.onUpload});
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+      const Icon(Icons.home_work_outlined, size: 72, color: AppColors.textLight),
+      const SizedBox(height: 16),
+      const Text('No properties yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textDark)),
+      const SizedBox(height: 6),
+      const Text('Upload your first property to get started', style: TextStyle(color: AppColors.textMuted)),
+      const SizedBox(height: 24),
+      ElevatedButton.icon(
+        onPressed: onUpload,
+        icon: const Icon(Icons.add),
+        label: const Text('Upload Property'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.primary, foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      ),
+    ]),
+  );
+}
 
-  const _ListingCard({required this.listing, required this.onDelete});
-
-  Color get _statusColor {
-    switch (listing['status']) {
-      case 'Active': return AppColors.success;
-      case 'Under Review': return Colors.orange;
-      default: return AppColors.textLight;
-    }
-  }
-
-  Color get _statusBg {
-    switch (listing['status']) {
-      case 'Active': return AppColors.successBg;
-      case 'Under Review': return const Color(0xFFFFF3E0);
-      default: return AppColors.surface;
-    }
-  }
+class _PropertyTile extends StatelessWidget {
+  final Map<String, dynamic> property;
+  final VoidCallback onEdit;
+  const _PropertyTile({required this.property, required this.onEdit});
 
   @override
   Widget build(BuildContext context) {
+    final status     = property['status']       as String? ?? 'under_review';
+    final isVerified = property['isVerified']   as bool?   ?? false;
+    final rejNote    = property['rejectionNote'] as String? ?? '';
+    final type       = property['propertyType'] as String? ?? '';
+
+    Color statusColor; String statusLabel;
+    switch (status) {
+      case 'active':   statusColor = AppColors.success;       statusLabel = 'Active';       break;
+      case 'rejected': statusColor = AppColors.error;         statusLabel = 'Rejected';     break;
+      case 'inactive': statusColor = AppColors.textLight;     statusLabel = 'Inactive';     break;
+      default:         statusColor = const Color(0xFFE65100); statusLabel = 'Under Review';
+    }
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.border),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 3))
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 44, height: 44,
-                decoration: BoxDecoration(
-                    color: AppColors.primaryLight,
-                    borderRadius: BorderRadius.circular(12)),
-                child: Icon(listing['icon'] as IconData,
-                    color: AppColors.primary, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(listing['name'] as String,
-                        style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textDark),
-                        overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 2),
-                    Text(listing['type'] as String,
-                        style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w600)),
-                  ],
-                ),
-              ),
-              // Status badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                    color: _statusBg,
-                    borderRadius: BorderRadius.circular(20)),
-                child: Text(listing['status'] as String,
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: _statusColor)),
-              ),
-            ],
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            width: 48, height: 48,
+            decoration: BoxDecoration(color: AppColors.primaryLight, borderRadius: BorderRadius.circular(12)),
+            child: Center(child: Text(type == 'pg' ? '🛏️' : type == 'guest' ? '🏨' : '🌿',
+                style: const TextStyle(fontSize: 22))),
           ),
-          const SizedBox(height: 12),
-          const Divider(height: 1, color: AppColors.border),
-          const SizedBox(height: 12),
-
-          // Location
-          Row(children: [
-            const Icon(Icons.location_on_outlined,
-                size: 15, color: AppColors.textMuted),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Text(listing['location'] as String,
-                  style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
-                  overflow: TextOverflow.ellipsis),
-            ),
-          ]),
-          const SizedBox(height: 6),
-
-          Row(children: [
-            const Icon(Icons.currency_rupee_rounded,
-                size: 15, color: AppColors.primary),
-            const SizedBox(width: 4),
-            Text(listing['price'] as String,
-                style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primary)),
-            const Spacer(),
-            if ((listing['rooms'] as int) > 0)
-              Text('${listing['rooms']} Rooms',
-                  style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textMuted,
-                      fontWeight: FontWeight.w500)),
-          ]),
-          const SizedBox(height: 12),
-
-          // Action buttons
-          Row(children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () {},
-                icon: const Icon(Icons.edit_outlined, size: 16),
-                label: const Text('Edit'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.primary,
-                  side: const BorderSide(color: AppColors.primary),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(property['propertyName'] ?? 'Unnamed',
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textDark)),
+            const SizedBox(height: 2),
+            Text(property['location'] ?? '',
+                style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+          ])),
+          // Edit button
+          IconButton(
+            onPressed: onEdit,
+            icon: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppColors.primaryLight,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
               ),
+              child: const Icon(Icons.edit_rounded, size: 16, color: AppColors.primary),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: onDelete,
-                icon: const Icon(Icons.delete_outline_rounded, size: 16),
-                label: const Text('Delete'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.error,
-                  side: const BorderSide(color: AppColors.error),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                ),
-              ),
+          ),
+        ]),
+        const SizedBox(height: 12),
+        Wrap(spacing: 8, runSpacing: 6, children: [
+          _Badge(label: statusLabel, color: statusColor),
+          if (isVerified)
+            _Badge(label: '✓ Legally Verified', color: AppColors.success),
+          if (status == 'under_review' && !isVerified)
+            _Badge(label: '⏳ Awaiting Verification', color: const Color(0xFFE65100)),
+        ]),
+        if (status == 'rejected' && rejNote.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.error.withValues(alpha: 0.07),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
             ),
-          ]),
+            child: Text('Rejection reason: $rejNote',
+                style: const TextStyle(fontSize: 12, color: AppColors.error)),
+          ),
         ],
-      ),
+      ]),
     );
   }
 }
 
-class _BottomNav extends StatelessWidget {
-  final int currentIndex;
-  const _BottomNav({required this.currentIndex});
-
+class _Badge extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _Badge({required this.label, required this.color});
   @override
-  Widget build(BuildContext context) {
-    final items = [
-      {'icon': Icons.home_rounded, 'label': 'Home'},
-      {'icon': Icons.list_alt_rounded, 'label': 'Listing'},
-      {'icon': Icons.bar_chart_rounded, 'label': 'Dashboard'},
-      {'icon': Icons.person_rounded, 'label': 'Profile'},
-    ];
-    return Container(
-      decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.border))),
-      padding: const EdgeInsets.only(top: 8, bottom: 4),
-      child: Row(
-        children: List.generate(items.length, (i) {
-          final active = i == currentIndex;
-          return Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(items[i]['icon'] as IconData, size: 24,
-                    color: active ? AppColors.primary : AppColors.textLight),
-                const SizedBox(height: 2),
-                Text(items[i]['label'] as String,
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
-                        color: active ? AppColors.primary : AppColors.textLight)),
-              ],
-            ),
-          );
-        }),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: color.withValues(alpha: 0.4)),
+    ),
+    child: Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color)),
+  );
 }

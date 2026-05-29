@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
+import '../services/api_service.dart';
 import 'verification_screen.dart';
 
 class PropertyDetailsScreen extends StatefulWidget {
@@ -89,6 +90,89 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     if (widget.propertyType == 'guest') return Icons.hotel_rounded;
     return Icons.landscape_rounded;
   }
+
+  // ── API Save ─────────────────────────────────────────────
+  bool _isSaving = false;
+
+  Future<void> _saveProperty() async {
+    if (_nameCtrl.text.trim().isEmpty) { _showSnack('Please enter property name', isError: true); return; }
+    if (_locationCtrl.text.trim().isEmpty) { _showSnack('Please enter location', isError: true); return; }
+
+    setState(() => _isSaving = true);
+    try {
+      Map<String, dynamic> details = {};
+
+      if (widget.propertyType == 'plot') {
+        details = {
+          'plotId':      _plotIdCtrl.text.trim().isEmpty ? null : _plotIdCtrl.text.trim(),
+          'plotType':    _plotType,
+          'facing':      _facing,
+          'plotSize':    double.tryParse(_plotSizeCtrl.text) ?? 0,
+          'plotLength':  double.tryParse(_plotDimLCtrl.text) ?? 0,
+          'plotWidth':   double.tryParse(_plotDimWCtrl.text) ?? 0,
+          'totalPrice':  double.tryParse(_totalPriceCtrl.text) ?? 0,
+          'description': _descriptionCtrl.text.trim(),
+          'facilities':  [
+            ..._plotFacilities.entries.where((e) => e.value).map((e) => e.key),
+            ..._plotExtraFacilities,
+          ],
+        };
+      } else if (widget.propertyType == 'guest') {
+        details = {
+          'totalRooms':    int.tryParse(_totalRoomsCtrl.text) ?? 0,
+          'acRooms':       int.tryParse(_acRoomsCtrl.text) ?? 0,
+          'nonAcRooms':    int.tryParse(_nonAcRoomsCtrl.text) ?? 0,
+          'singlePrice':   double.tryParse(_singlePriceCtrl.text.replaceAll(',', '')) ?? 0,
+          'singleDeposit': double.tryParse(_singleDepositCtrl.text.replaceAll(',', '')) ?? 0,
+          'doublePrice':   double.tryParse(_doublePriceCtrl.text.replaceAll(',', '')) ?? 0,
+          'doubleDeposit': double.tryParse(_doubleDepositCtrl.text.replaceAll(',', '')) ?? 0,
+          'familyPrice':   double.tryParse(_familyPriceCtrl.text.replaceAll(',', '')) ?? 0,
+          'familyDeposit': double.tryParse(_familyDepositCtrl.text.replaceAll(',', '')) ?? 0,
+          'commonKitchen':  _commonKitchen,
+          'privateKitchen': _privateKitchen,
+          'description':   _guestDescCtrl.text.trim(),
+          'facilities':    [
+            ..._guestFacilities.entries.where((e) => e.value).map((e) => e.key),
+            ..._guestExtraFacilities,
+          ],
+        };
+      } else {
+        // PG
+        details = {
+          'availableFor':  _availableFor.toList(),
+          'totalRooms':    int.tryParse(_totalRoomsPgCtrl.text) ?? 0,
+          'occupancyType': _occupancyType,
+          'roomType':      'sharing',
+        };
+      }
+
+      await ApiService.createProperty(
+        propertyType:  widget.propertyType,
+        propertyName:  _nameCtrl.text.trim(),
+        location:      _locationCtrl.text.trim(),
+        localLandmark: _landmarkCtrl.text.trim(),
+        details:       details,
+      );
+
+      if (!mounted) return;
+      _showSnack('✅ Property saved to database!', isError: false);
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const VerificationScreen()));
+    } catch (e) {
+      _showSnack(e.toString().replaceAll('Exception: ', ''), isError: true);
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  void _showSnack(String msg, {required bool isError}) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg),
+      backgroundColor: isError ? AppColors.error : AppColors.success,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
+  }
+  // ─────────────────────────────────────────────────────────
 
   // ── Reusable: card row ──
   Widget _cardRow({required String label, String? sublabel, required Widget trailing, bool showBorder = true}) {
@@ -735,7 +819,8 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
               child: PrimaryButton(
                 label: (widget.propertyType == 'plot' || widget.propertyType == 'guest') ? 'Done' : 'Next',
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VerificationScreen())),
+                isLoading: _isSaving,
+                onPressed: _saveProperty,
               ),
             ),
           ],
