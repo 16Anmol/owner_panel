@@ -1,3 +1,4 @@
+import '../config.dart';
 import 'dart:typed_data';
 // ignore: avoid_web_libraries_in_flutter, deprecated_member_use
 import 'dart:html' as html;
@@ -777,7 +778,7 @@ class _PhotosSection extends StatelessWidget {
                   child: Image.network(
                     existingPhotos[i].startsWith('http')
                         ? existingPhotos[i]
-                        : 'http://localhost:5000${existingPhotos[i]}',
+                        : '${Config.serverUrl}${existingPhotos[i]}',
                     width: 80, height: 80, fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => Container(
                       width: 80, height: 80,

@@ -1,6 +1,7 @@
 import 'dart:async';
 // ignore: avoid_web_libraries_in_flutter, deprecated_member_use
 import 'dart:html' as html;
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -49,7 +50,8 @@ class _CallScreenState extends State<CallScreen> {
   Timer? _ringTimer;
 
   // Ringtone (web only)
-  html.AudioElement? _ringtone;
+  html.AudioElement? _ringtone;   // web
+  AudioPlayer?        _mobileRingtone; // Android
 
   final _iceConfig = {
     'iceServers': [
@@ -206,22 +208,38 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   void _playRingtone({required bool incoming}) {
-    if (!kIsWeb) return;
-    try {
-      _ringtone = html.AudioElement()
-        ..src = incoming
+    if (kIsWeb) {
+      try {
+        _ringtone = html.AudioElement()
+          ..src = incoming
+              ? 'https://www.soundjay.com/phone/sounds/phone-ringing-04.mp3'
+              : 'https://www.soundjay.com/phone/sounds/phone-dialing-02.mp3'
+          ..loop = true;
+        html.document.body!.append(_ringtone!);
+        _ringtone!.play();
+      } catch (_) {}
+    } else {
+      // Android — use audioplayers with an online ringtone URL
+      _mobileRingtone = AudioPlayer();
+      _mobileRingtone!.setReleaseMode(ReleaseMode.loop);
+      _mobileRingtone!.play(UrlSource(
+        incoming
             ? 'https://www.soundjay.com/phone/sounds/phone-ringing-04.mp3'
-            : 'https://www.soundjay.com/phone/sounds/phone-dialing-02.mp3'
-        ..loop = true;
-      html.document.body!.append(_ringtone!);
-      _ringtone!.play();
-    } catch (_) {}
+            : 'https://www.soundjay.com/phone/sounds/phone-dialing-02.mp3',
+      ));
+    }
   }
 
   void _stopRingtone() {
-    _ringtone?.pause();
-    _ringtone?.remove();
-    _ringtone = null;
+    if (kIsWeb) {
+      _ringtone?.pause();
+      _ringtone?.remove();
+      _ringtone = null;
+    } else {
+      _mobileRingtone?.stop();
+      _mobileRingtone?.dispose();
+      _mobileRingtone = null;
+    }
   }
 
   @override

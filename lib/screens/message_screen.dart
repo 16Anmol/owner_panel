@@ -1,6 +1,12 @@
+import '../config.dart';
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:record/record.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:path_provider/path_provider.dart';
 // ignore: avoid_web_libraries_in_flutter, deprecated_member_use
 import 'dart:html' as html;
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -209,6 +215,8 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
   final List<dynamic> _audioChunks = [];
   Timer?  _recordTimer;
   int     _recordSeconds = 0;
+  AudioRecorder? _mobileRecorder;
+  String?        _mobileRecordPath;
   String? _blocked;
   String? _lastTs;
   Timer?  _timer;
@@ -341,7 +349,11 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
         await reader.onLoad.first;
         bytes = (reader.result as List<dynamic>).cast<int>();
       } else {
-        return; // image_picker not needed for owner panel (web only)
+        final picker = ImagePicker();
+        final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+        if (picked == null) return;
+        bytes = await picked.readAsBytes();
+        name  = 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
       }
     } catch (_) { return; }
 
@@ -372,8 +384,8 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
   // ── Send text ─────────────────────────────────────────────────
   // ── Audio recording methods ─────────────────────────────────
   Future<void> _startRecording() async {
-    if (!kIsWeb) return;
     if (_recording) { await _stopRecording(); return; }
+    if (!kIsWeb) { await _startMobileRecording(); return; }
     try {
       final stream = await html.window.navigator.mediaDevices?.getUserMedia({'audio': true});
       if (stream == null) {
@@ -405,6 +417,7 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
   }
 
   Future<void> _stopRecording() async {
+    if (!kIsWeb) { await _stopMobileRecording(); return; }
     if (_mediaRecorder == null) return;
     _recordTimer?.cancel();
     _mediaRecorder!.requestData();
@@ -446,11 +459,58 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
 
   void _cancelRecording() {
     _recordTimer?.cancel();
-    _mediaRecorder?.stream?.getTracks().forEach((t) => t.stop());
-    _mediaRecorder?.stop();
-    _audioChunks.clear();
-    _mediaRecorder = null;
+    if (kIsWeb) {
+      _mediaRecorder?.stream?.getTracks().forEach((t) => t.stop());
+      _mediaRecorder?.stop();
+      _audioChunks.clear();
+      _mediaRecorder = null;
+    } else {
+      _mobileRecorder?.cancel();
+      _mobileRecorder = null;
+    }
     setState(() { _recording = false; _recordSeconds = 0; });
+  }
+
+  Future<void> _startMobileRecording() async {
+    try {
+      _mobileRecorder = AudioRecorder();
+      final hasPermission = await _mobileRecorder!.hasPermission();
+      if (!hasPermission) {
+        _mobileRecorder = null;
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Microphone permission denied')));
+        return;
+      }
+      final tmpDir = await getTemporaryDirectory();
+      final path = '${tmpDir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      await _mobileRecorder!.start(const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 128000), path: path);
+      _mobileRecordPath = path;
+      _recordSeconds = 0;
+      _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() => _recordSeconds++);
+      });
+      setState(() => _recording = true);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not start recording: $e')));
+    }
+  }
+
+  Future<void> _stopMobileRecording() async {
+    _recordTimer?.cancel();
+    setState(() { _recording = false; _sendingAudio = true; });
+    try {
+      final path = await _mobileRecorder?.stop();
+      _mobileRecorder = null;
+      if (path == null) return;
+      final bytes    = await File(path).readAsBytes();
+      final fileName = 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      await ApiService.uploadOwnerChatAudio(chatId: widget.chatId, bytes: bytes, fileName: fileName);
+      try { await File(path).delete(); } catch (_) {}
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to send audio: $e')));
+    } finally { if (mounted) setState(() => _sendingAudio = false); }
   }
 
   String _fmtRec(int s) =>
@@ -924,7 +984,7 @@ class _OwnerBubble extends StatelessWidget {
               child: Image.network(
                 imageUrl.startsWith('http')
                     ? imageUrl
-                    : 'http://localhost:5000$imageUrl',
+                    : '\${Config.serverUrl}imageUrl',
                 width: 200, fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => const Icon(
                     Icons.broken_image_outlined, color: AppColors.textLight),
@@ -933,7 +993,7 @@ class _OwnerBubble extends StatelessWidget {
           // Audio bubble
           if (audioUrl != null && audioUrl.isNotEmpty) ...[
             _OwnerAudioBubble(
-              url: audioUrl.startsWith('http') ? audioUrl : 'http://localhost:5000$audioUrl',
+              url: audioUrl.startsWith('http') ? audioUrl : '\${Config.serverUrl}audioUrl',
               isMe: isMe,
             ),
           ] else if (linkUrl != null && linkUrl.isNotEmpty)
@@ -1014,7 +1074,10 @@ class _OwnerAudioBubble extends StatefulWidget {
 }
 
 class _OwnerAudioBubbleState extends State<_OwnerAudioBubble> {
-  html.AudioElement? _audio;
+  // Web
+  html.AudioElement? _audioEl;
+  // Mobile
+  AudioPlayer? _player;
   bool   _playing  = false;
   double _progress = 0.0;
   double _duration = 0.0;
@@ -1023,48 +1086,67 @@ class _OwnerAudioBubbleState extends State<_OwnerAudioBubble> {
   @override
   void initState() {
     super.initState();
-    _audio = html.AudioElement()
-      ..src = widget.url
-      ..preload = 'metadata';
-    // Append to DOM — required for browser audio pipeline in Flutter web
-    html.document.body!.append(_audio!);
-    _audio!.onLoadedMetadata.listen((_) {
-      if (mounted) setState(() => _duration = (_audio!.duration as num).toDouble());
-    });
-    _audio!.onEnded.listen((_) {
-      _ticker?.cancel();
-      if (mounted) setState(() { _playing = false; _progress = 0.0; });
-    });
+    if (kIsWeb) {
+      _audioEl = html.AudioElement()
+        ..src = widget.url
+        ..preload = 'metadata';
+      html.document.body!.append(_audioEl!);
+      _audioEl!.onLoadedMetadata.listen((_) {
+        if (mounted) setState(() => _duration = _audioEl!.duration.isNaN || _audioEl!.duration.isInfinite ? 0.0 : _audioEl!.duration.toDouble());
+      });
+      _audioEl!.onEnded.listen((_) {
+        _ticker?.cancel();
+        if (mounted) setState(() { _playing = false; _progress = 0.0; });
+      });
+    } else {
+      _player = AudioPlayer();
+      _player!.setSourceUrl(widget.url).then((_) async {
+        final dur = await _player!.getDuration();
+        if (mounted && dur != null) setState(() => _duration = dur.inMilliseconds / 1000.0);
+      });
+      _player!.onPlayerComplete.listen((_) {
+        _ticker?.cancel();
+        if (mounted) setState(() { _playing = false; _progress = 0.0; });
+      });
+    }
   }
 
   @override
   void dispose() {
     _ticker?.cancel();
-    _audio?.pause();
-    _audio?.remove();
-    _audio = null;
+    if (kIsWeb) { _audioEl?.pause(); _audioEl?.remove(); _audioEl = null; }
+    else { _player?.dispose(); _player = null; }
     super.dispose();
   }
 
   void _toggle() {
-    if (_audio == null) return;
-    if (_playing) {
-      _audio!.pause();
-      _ticker?.cancel();
-      setState(() => _playing = false);
+    if (kIsWeb) {
+      if (_audioEl == null) return;
+      if (_playing) {
+        _audioEl!.pause(); _ticker?.cancel(); setState(() => _playing = false);
+      } else {
+        _audioEl!.play();
+        _ticker = Timer.periodic(const Duration(milliseconds: 80), (_) {
+          if (!mounted) { _ticker?.cancel(); return; }
+          if (_duration > 0) setState(() => _progress = (_audioEl!.currentTime.toDouble() / _duration).clamp(0.0, 1.0));
+        });
+        setState(() => _playing = true);
+      }
     } else {
-      _audio!.play();
-      // Poll every 80ms — most reliable approach for Flutter web
-      _ticker = Timer.periodic(const Duration(milliseconds: 80), (_) {
-        if (!mounted) { _ticker?.cancel(); return; }
-        if (_duration > 0) {
-          final t = _audio!.currentTime.toDouble();
-          if (t != (_progress * _duration)) {
-            setState(() => _progress = (t / _duration).clamp(0.0, 1.0));
+      if (_player == null) return;
+      if (_playing) {
+        _player!.pause(); _ticker?.cancel(); setState(() => _playing = false);
+      } else {
+        _player!.resume();
+        _ticker = Timer.periodic(const Duration(milliseconds: 80), (_) async {
+          if (!mounted) { _ticker?.cancel(); return; }
+          final pos = await _player!.getCurrentPosition();
+          if (pos != null && _duration > 0) {
+            setState(() => _progress = (pos.inMilliseconds / 1000.0 / _duration).clamp(0.0, 1.0));
           }
-        }
-      });
-      setState(() => _playing = true);
+        });
+        setState(() => _playing = true);
+      }
     }
   }
 
@@ -1077,16 +1159,14 @@ class _OwnerAudioBubbleState extends State<_OwnerAudioBubble> {
   @override
   Widget build(BuildContext context) {
     final bg    = widget.isMe ? AppColors.primary : Colors.white;
-    final muted = widget.isMe
-        ? Colors.white.withValues(alpha: 0.6)
-        : AppColors.textMuted;
+    final muted = widget.isMe ? Colors.white.withValues(alpha: 0.6) : AppColors.textMuted;
+    final currentTime = kIsWeb ? (_audioEl?.currentTime.toDouble() ?? 0.0) : 0.0;
 
     return Container(
       width: 220,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(16),
+        color: bg, borderRadius: BorderRadius.circular(16),
         border: widget.isMe ? null : Border.all(color: AppColors.border),
       ),
       child: Row(children: [
@@ -1095,9 +1175,7 @@ class _OwnerAudioBubbleState extends State<_OwnerAudioBubble> {
           child: Container(
             width: 36, height: 36,
             decoration: BoxDecoration(
-              color: widget.isMe
-                  ? Colors.white.withValues(alpha: 0.25)
-                  : AppColors.primaryLight,
+              color: widget.isMe ? Colors.white.withValues(alpha: 0.25) : AppColors.primaryLight,
               shape: BoxShape.circle,
             ),
             child: Icon(_playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
@@ -1119,8 +1197,11 @@ class _OwnerAudioBubbleState extends State<_OwnerAudioBubble> {
             child: Slider(
               value: _progress.clamp(0.0, 1.0),
               onChanged: (v) {
-                if (_audio == null || _duration <= 0) return;
-                _audio!.currentTime = v * _duration;
+                if (kIsWeb && _audioEl != null && _duration > 0) {
+                  _audioEl!.currentTime = v * _duration;
+                } else if (!kIsWeb && _player != null && _duration > 0) {
+                  _player!.seek(Duration(milliseconds: (v * _duration * 1000).toInt()));
+                }
                 setState(() => _progress = v);
               },
             ),
@@ -1128,12 +1209,8 @@ class _OwnerAudioBubbleState extends State<_OwnerAudioBubble> {
           Row(children: [
             Icon(Icons.mic_rounded, size: 11, color: muted),
             const SizedBox(width: 3),
-            Text(
-              _playing
-                  ? _fmt(_audio!.currentTime.toDouble())
-                  : _fmt(_duration),
-              style: TextStyle(fontSize: 10, color: muted),
-            ),
+            Text(_fmt(_playing ? currentTime : _duration),
+                style: TextStyle(fontSize: 10, color: muted)),
           ]),
         ])),
       ]),

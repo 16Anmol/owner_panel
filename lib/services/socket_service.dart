@@ -1,4 +1,4 @@
-import 'dart:async';
+import '../config.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 
 class SocketService {
@@ -19,7 +19,7 @@ class SocketService {
 
   void init() {
     if (_socket != null) return;
-    _socket = IO.io('http://localhost:5000', IO.OptionBuilder()
+    _socket = IO.io(Config.socketUrl, IO.OptionBuilder()
         .setTransports(['websocket'])
         .disableAutoConnect()
         .build());
