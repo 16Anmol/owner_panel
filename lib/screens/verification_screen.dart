@@ -5,7 +5,8 @@ import 'document_upload_screen.dart';
 import 'self_verification_screen.dart';
 
 class VerificationScreen extends StatelessWidget {
-  const VerificationScreen({super.key});
+  final String? propertyId;
+  const VerificationScreen({super.key, this.propertyId});
 
   @override
   Widget build(BuildContext context) {
@@ -81,7 +82,7 @@ class VerificationScreen extends StatelessWidget {
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                            builder: (_) => const DocumentUploadScreen()),
+                            builder: (_) => DocumentUploadScreen(propertyId: propertyId)),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -122,7 +123,7 @@ class VerificationScreen extends StatelessWidget {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                        builder: (_) => const DocumentUploadScreen()),
+                        builder: (_) => DocumentUploadScreen(propertyId: propertyId)),
                   );
                 },
               ),

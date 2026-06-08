@@ -1,4 +1,4 @@
-import '../config.dart';
+import 'dart:async';
 import 'dart:typed_data';
 // ignore: avoid_web_libraries_in_flutter, deprecated_member_use
 import 'dart:html' as html;
@@ -179,39 +179,28 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   // ── Pick photos ───────────────────────────────────────────────
   Future<void> _pickPhotos() async {
     if (kIsWeb) {
-      // Flutter Web: use dart:html file input directly
-      final input = html.FileUploadInputElement()
-        ..accept = 'image/*'
-        ..multiple = true;
-      input.click();
-      await input.onChange.first;
-      if (input.files == null || input.files!.isEmpty) return;
-      for (final file in input.files!) {
-        final reader = html.FileReader();
-        reader.readAsArrayBuffer(file);
-        await reader.onLoad.first;
-        final bytes = Uint8List.fromList(
-            (reader.result as List<dynamic>).cast<int>());
-        if (mounted) {
+      await _webPickFiles(
+        accept: 'image/*',
+        multiple: true,
+        onPicked: (bytes, name) {
           setState(() {
             _newPhotoBytes.add(bytes);
-            _newPhotoNames.add(file.name);
+            _newPhotoNames.add(name);
             if (_isSuspendedOrRejected) { _replacePhotos = true; }
           });
-        }
-      }
+        },
+      );
     } else {
-      // Mobile: use image_picker
       final picker = ImagePicker();
       final picked = await picker.pickMultiImage(imageQuality: 80);
-      if (picked.isEmpty) { return; }
+      if (picked.isEmpty) return;
       for (final xf in picked) {
         final bytes = await xf.readAsBytes();
         if (mounted) {
           setState(() {
             _newPhotoBytes.add(bytes);
             _newPhotoNames.add(xf.name);
-            if (_isSuspendedOrRejected) { _replacePhotos = true; }
+            if (_isSuspendedOrRejected) _replacePhotos = true;
           });
         }
       }
@@ -221,35 +210,25 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   // ── Pick a document ───────────────────────────────────────────
   Future<void> _pickDocument(String docType) async {
     if (kIsWeb) {
-      // Flutter Web: use dart:html — accept images AND PDFs
-      final input = html.FileUploadInputElement()
-        ..accept = 'image/*,application/pdf'
-        ..multiple = false;
-      input.click();
-      await input.onChange.first;
-      if (input.files == null || input.files!.isEmpty) return;
-      final file   = input.files!.first;
-      final reader = html.FileReader();
-      reader.readAsArrayBuffer(file);
-      await reader.onLoad.first;
-      final bytes = Uint8List.fromList(
-          (reader.result as List<dynamic>).cast<int>());
-      if (mounted) {
-        setState(() {
-          if (docType == 'registry') {
-            _newRegistryBytes = bytes;
-            _newRegistryName  = file.name;
-          } else {
-            _newNocBytes = bytes;
-            _newNocName  = file.name;
-          }
-        });
-      }
+      await _webPickFiles(
+        accept: 'image/*,application/pdf',
+        multiple: false,
+        onPicked: (bytes, name) {
+          setState(() {
+            if (docType == 'registry') {
+              _newRegistryBytes = bytes;
+              _newRegistryName  = name;
+            } else {
+              _newNocBytes = bytes;
+              _newNocName  = name;
+            }
+          });
+        },
+      );
     } else {
-      // Mobile: use image_picker
       final picker = ImagePicker();
       final xf = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
-      if (xf == null) { return; }
+      if (xf == null) return;
       final bytes = await xf.readAsBytes();
       if (mounted) {
         setState(() {
@@ -262,6 +241,58 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           }
         });
       }
+    }
+  }
+
+  // ── Web file picker — appends input to DOM to avoid popup blocker ──
+
+  // ── Web file picker ── proven pattern that works in Flutter Web ──────
+  Future<void> _webPickFiles({
+    required String accept,
+    required bool multiple,
+    required void Function(Uint8List bytes, String name) onPicked,
+  }) async {
+    final completer = Completer<List<html.File>>();
+    
+    final input = html.FileUploadInputElement()
+      ..accept = accept
+      ..multiple = multiple
+      ..style.display = 'none';
+
+    // Register listener BEFORE appending/clicking so it's ready
+    input.addEventListener('change', (event) {
+      final files = input.files;
+      if (files != null && files.isNotEmpty) {
+        completer.complete(files.toList());
+      } else {
+        completer.complete([]);
+      }
+    });
+
+    // Also handle cancel (focus returns to window)
+    html.window.addEventListener('focus', (event) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (!completer.isCompleted) completer.complete([]);
+      });
+    });
+
+    html.document.body!.children.add(input);
+    input.click();
+
+    final files = await completer.future;
+    input.remove();
+
+    for (final file in files) {
+      final reader = html.FileReader();
+      final readerCompleter = Completer<void>();
+      reader.addEventListener('load', (event) {
+        if (!readerCompleter.isCompleted) readerCompleter.complete();
+      });
+      reader.readAsArrayBuffer(file);
+      await readerCompleter.future;
+      
+      final bytes = Uint8List.view(reader.result as ByteBuffer);
+      if (mounted) onPicked(bytes, file.name);
     }
   }
 
@@ -778,7 +809,7 @@ class _PhotosSection extends StatelessWidget {
                   child: Image.network(
                     existingPhotos[i].startsWith('http')
                         ? existingPhotos[i]
-                        : '${Config.serverUrl}${existingPhotos[i]}',
+                        : 'http://localhost:5000${existingPhotos[i]}',
                     width: 80, height: 80, fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => Container(
                       width: 80, height: 80,
@@ -1133,7 +1164,7 @@ class _SwitchRow extends StatelessWidget {
     mainAxisAlignment: MainAxisAlignment.spaceBetween,
     children: [
       Text(label, style: const TextStyle(fontSize: 14, color: AppColors.textDark)),
-      Switch(value: value, onChanged: onChanged, activeColor: AppColors.primary),
+      Switch(value: value, onChanged: onChanged, activeTrackColor: AppColors.primary, thumbColor: WidgetStateProperty.all(Colors.white)),
     ],
   );
 }

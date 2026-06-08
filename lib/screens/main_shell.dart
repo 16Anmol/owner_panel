@@ -4,9 +4,6 @@ import 'home_screen.dart';
 import 'listing_screen.dart';
 import 'dashboard_screen.dart';
 import 'profile_screen.dart';
-import 'call_screen.dart';
-import '../services/api_service.dart';
-import '../services/socket_service.dart';
 
 /// MainShell — persistent bottom nav using IndexedStack.
 /// All four tabs stay alive; switching never rebuilds or loses state.
@@ -28,35 +25,9 @@ class _MainShellState extends State<MainShell> {
   void initState() {
     super.initState();
     _index = widget.initialIndex;
-    _initSocket();
   }
 
   void switchTab(int i) => setState(() => _index = i);
-
-
-  Future<void> _initSocket() async {
-    try {
-      final owner = await ApiService.getSavedOwner();
-      if (owner == null) return;
-      final myId = owner['_id'] as String? ?? '';
-      SocketService().register(myId, 'owner');
-      SocketService().onIncomingCall = (data) => _showIncomingCall(data, myId);
-    } catch (e) { debugPrint('Socket init error: $e'); }
-  }
-
-  void _showIncomingCall(Map<String, dynamic> data, String myId) {
-    if (!mounted) return;
-    Navigator.push(context, MaterialPageRoute(builder: (_) => CallScreen(
-      myId:          myId,
-      myType:        'owner',
-      myName:        '',
-      peerId:        data['fromUserId']   as String? ?? '',
-      peerType:      data['fromUserType'] as String? ?? 'customer',
-      peerName:      data['fromName']     as String? ?? 'Customer',
-      isOutgoing:    false,
-      incomingOffer: Map<String, dynamic>.from(data['offer'] as Map? ?? {}),
-    )));
-  }
 
   @override
   Widget build(BuildContext context) {

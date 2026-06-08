@@ -1,5 +1,4 @@
 import 'dart:convert';
-import '../config.dart';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -7,7 +6,7 @@ import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const String baseUrl = Config.apiUrl;
+  static const String baseUrl = 'http://localhost:5000/api';
 
   static Future<String?> getToken() async {
     final p = await SharedPreferences.getInstance();
@@ -384,6 +383,12 @@ class ApiService {
     return _handle(res);
   }
 
+  static Future<Map<String, dynamic>> submitProblem(String message) async {
+    final res = await http.post(Uri.parse('$baseUrl/customers/owner-support'),
+        headers: await _headers(), body: jsonEncode({'message': message}));
+    return _handle(res);
+  }
+
   static Future<Map<String, dynamic>> ownerSendMessage({
     required String chatId,
     required String text,
@@ -430,6 +435,26 @@ class ApiService {
   }
 
   // ── OWNER MESSAGE ACTIONS ─────────────────────────────────
+  static Future<Map<String, dynamic>> ownerUploadChatAudio({
+    required String chatId,
+    required List<int> bytes,
+    required String fileName,
+    int duration = 0,
+  }) async {
+    final token = await getToken();
+    final request = http.MultipartRequest(
+        'POST', Uri.parse('$baseUrl/customers/owner-chats/$chatId/audio'));
+    if (token != null) request.headers['Authorization'] = 'Bearer $token';
+    request.fields['duration'] = duration.toString();
+    request.files.add(http.MultipartFile.fromBytes('audio', bytes,
+        filename: fileName, contentType: MediaType('audio', 'webm')));
+    final streamed = await request.send();
+    final res = await http.Response.fromStream(streamed);
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode >= 200 && res.statusCode < 300) return body;
+    throw Exception(body['message'] ?? 'Voice upload failed');
+  }
+
   static Future<Map<String, dynamic>> ownerUploadChatPhoto({
     required String chatId,
     required List<int> bytes,
@@ -439,8 +464,15 @@ class ApiService {
     final request = http.MultipartRequest(
         'POST', Uri.parse('$baseUrl/customers/owner-chats/$chatId/upload'));
     if (token != null) request.headers['Authorization'] = 'Bearer $token';
-    request.files
-        .add(http.MultipartFile.fromBytes('photo', bytes, filename: fileName));
+    final ext =
+        fileName.contains('.') ? fileName.split('.').last.toLowerCase() : 'jpg';
+    final mime = ext == 'png'
+        ? 'image/png'
+        : ext == 'webp'
+            ? 'image/webp'
+            : 'image/jpeg';
+    request.files.add(http.MultipartFile.fromBytes('photo', bytes,
+        filename: fileName, contentType: MediaType.parse(mime)));
     final streamed = await request.send();
     final res = await http.Response.fromStream(streamed);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
@@ -481,91 +513,57 @@ class ApiService {
     return _handle(res);
   }
 
-  static Future<Map<String, dynamic>> uploadOwnerChatAudio({
-    required String chatId,
-    required List<int> bytes,
-    required String fileName,
-  }) async {
-    final uri =
-        Uri.parse('$baseUrl/customers/owner-chats/$chatId/upload-audio');
-    final req = http.MultipartRequest('POST', uri);
-    req.headers.addAll(await _headers());
-    req.files.add(http.MultipartFile.fromBytes('audio', bytes,
-        filename: fileName, contentType: MediaType('audio', 'webm')));
-    final streamed = await req.send();
-    final res = await http.Response.fromStream(streamed);
-    return _handle(res);
-  }
-
-  static Future<Map<String, dynamic>> submitSupportTicket({
-    required String subject,
-    required String message,
-  }) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/support/owner'),
-      headers: await _headers(),
-      body: jsonEncode({'subject': subject, 'message': message}),
-    );
-    return _handle(res);
-  }
-
-  // Owner schedules a visit directly
-  static Future<Map<String, dynamic>> scheduleVisitOwner({
-    required String propertyId,
-    required String visitorName,
-    required String visitorPhone,
-    required String visitDate,
-    required String visitTime,
-    String requirement = '',
-    String? customerId,
-  }) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/visits'),
-      headers: await _headers(),
-      body: jsonEncode({
-        'propertyId': propertyId,
-        'visitorName': visitorName,
-        'visitorPhone': visitorPhone,
-        'visitDate': visitDate,
-        'visitTime': visitTime,
-        'requirement': requirement,
-        if (customerId != null) 'customerId': customerId,
-      }),
-    );
-    return _handle(res);
-  }
-
-  // Owner edits visit date/time directly (sends updated card to chat)
-  static Future<Map<String, dynamic>> editVisitOwner(
+  static Future<Map<String, dynamic>> rescheduleVisitOwner(
     String id, {
-    required String visitDate,
-    required String visitTime,
+    required String newDate,
+    required String newTime,
+    String reason = '',
   }) async {
     final res = await http.patch(
-      Uri.parse('$baseUrl/visits/$id/edit'),
+      Uri.parse('$baseUrl/visits/$id/reschedule'),
       headers: await _headers(),
-      body: jsonEncode({'visitDate': visitDate, 'visitTime': visitTime}),
+      body: jsonEncode(
+          {'newDate': newDate, 'newTime': newTime, 'reason': reason}),
     );
     return _handle(res);
   }
 
-  // Owner sends a note/message on a visit (shown to customer on their booking card)
-  static Future<Map<String, dynamic>> sendVisitNote(
-      String id, String note) async {
-    final res = await http.patch(
-      Uri.parse('$baseUrl/visits/$id/note'),
-      headers: await _headers(),
-      body: jsonEncode({'note': note}),
-    );
-    return _handle(res);
-  }
+  // ── Upload Aadhaar front + back (owner self-verification) ──────
+  static Future<Map<String, dynamic>> uploadAadhaar({
+    required Uint8List frontBytes,
+    required String frontName,
+    required Uint8List backBytes,
+    required String backName,
+  }) async {
+    final token = await getToken();
+    final request = http.MultipartRequest(
+        'POST', Uri.parse('$baseUrl/auth/upload-aadhaar'));
+    if (token != null) request.headers['Authorization'] = 'Bearer $token';
 
-  // Owner accepts a customer-edited visit
-  static Future<Map<String, dynamic>> acceptVisitOwner(String id) async {
-    final res = await http.patch(
-      Uri.parse('$baseUrl/visits/$id/accept'),
-      headers: await _headers(),
-    );
+    String _mime(String name) {
+      final ext = name.split('.').last.toLowerCase();
+      return ext == 'pdf'
+          ? 'application/pdf'
+          : ext == 'png'
+              ? 'image/png'
+              : 'image/jpeg';
+    }
+
+    request.files.add(http.MultipartFile.fromBytes(
+      'aadhaarFront',
+      frontBytes,
+      filename: frontName,
+      contentType: MediaType.parse(_mime(frontName)),
+    ));
+    request.files.add(http.MultipartFile.fromBytes(
+      'aadhaarBack',
+      backBytes,
+      filename: backName,
+      contentType: MediaType.parse(_mime(backName)),
+    ));
+
+    final streamed = await request.send();
+    final res = await http.Response.fromStream(streamed);
     return _handle(res);
   }
 }
