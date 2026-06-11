@@ -1,10 +1,17 @@
+// ignore_for_file: unused_element, unused_import, unused_field
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import 'main_shell.dart';
+// ignore: duplicate_ignore
+// ignore: unused_import
+import 'onboarding_payment_screen.dart'; // kept for re-enabling payment
 import 'otp_screen.dart';
 import 'forgot_password_screen.dart';
+import '../widgets/state_city_picker.dart';
+import '../utils/validators.dart';
+import '../utils/onboarding.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -13,15 +20,17 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  bool _isLogin  = true;
-  bool _loading  = false;
+  bool _isLogin = true;
+  bool _loading = false;
   bool _gLoading = false;
-  bool _obscure  = true;
+  bool _obscure = true;
 
-  final _emailCtrl    = TextEditingController();
+  final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  final _nameCtrl     = TextEditingController();
-  final _phoneCtrl    = TextEditingController();
+  final _nameCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  String _state = '';
+  String _city = '';
 
   // ── Firebase Google Sign In (Web popup) ─────────────────
   Future<void> _signInWithGoogle() async {
@@ -41,11 +50,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // Get Firebase ID token → send to our backend
       final String? idToken = await firebaseUser.getIdToken();
-      if (idToken == null) throw Exception('Could not get authentication token');
+      if (idToken == null)
+        throw Exception('Could not get authentication token');
 
       // Backend creates/finds owner in MongoDB
       await ApiService.googleAuth(idToken);
-      _goHome();
+      final me = await ApiService.getMe();
+      if (mounted)
+        routeAfterAuth(context, me['owner'] as Map<String, dynamic>?);
     } on FirebaseAuthException catch (e) {
       String msg;
       switch (e.code) {
@@ -59,7 +71,8 @@ class _LoginScreenState extends State<LoginScreen> {
           msg = 'Network error. Check your internet connection.';
           break;
         case 'invalid-credential':
-          msg = 'Invalid credentials. Make sure Firebase is configured correctly.';
+          msg =
+              'Invalid credentials. Make sure Firebase is configured correctly.';
           break;
         default:
           msg = e.message ?? 'Google sign-in failed';
@@ -78,7 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // ── Email / Password ─────────────────────────────────────
   Future<void> _submit() async {
-    final email    = _emailCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
     final password = _passwordCtrl.text.trim();
     if (email.isEmpty || password.isEmpty) {
       _showError('Please fill all fields');
@@ -95,11 +108,23 @@ class _LoginScreenState extends State<LoginScreen> {
           _goHome();
         }
       } else {
-        final name  = _nameCtrl.text.trim();
+        final name = _nameCtrl.text.trim();
         final phone = _phoneCtrl.text.trim();
-        if (name.isEmpty) { _showError('Please enter your name'); return; }
+        if (name.isEmpty) {
+          _showError('Please enter your name');
+          return;
+        }
+        if (!isValidName(name)) {
+          _showError('Please enter a valid name (letters only)');
+          return;
+        }
         final data = await ApiService.register(
-          name: name, email: email, phone: phone, password: password,
+          name: name,
+          email: email,
+          phone: phone,
+          password: password,
+          state: _state,
+          city: _city,
         );
         _goToOTP(email, 'verify', devOtp: data['devOtp']?.toString());
       }
@@ -112,14 +137,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _goHome() {
     if (!mounted) return;
-    Navigator.pushAndRemoveUntil(context,
-        MaterialPageRoute(builder: (_) => const MainShell()), (r) => false);
+    Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const MainShell()),
+        (r) => false); // payment paused
   }
 
   void _goToOTP(String email, String type, {String? devOtp}) {
-    Navigator.push(context, MaterialPageRoute(
-      builder: (_) => OtpScreen(email: email, type: type, devOtp: devOtp),
-    ));
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => OtpScreen(email: email, type: type, devOtp: devOtp),
+        ));
   }
 
   void _showError(String msg) {
@@ -148,30 +177,44 @@ class _LoginScreenState extends State<LoginScreen> {
               // ── Logo ──
               Row(children: [
                 Container(
-                  width: 52, height: 52,
+                  width: 52,
+                  height: 52,
                   decoration: BoxDecoration(
                     color: AppColors.primary,
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: const Icon(Icons.home_work_rounded, color: Colors.white, size: 28),
+                  child: const Icon(Icons.home_work_rounded,
+                      color: Colors.white, size: 28),
                 ),
                 const SizedBox(width: 12),
-                const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('LexNLand',
-                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.textDark)),
-                  Text('Owner Portal',
-                      style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
-                ]),
+                const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('LexNLand',
+                          style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textDark)),
+                      Text('Owner Portal',
+                          style: TextStyle(
+                              fontSize: 13, color: AppColors.textMuted)),
+                    ]),
               ]),
 
               const SizedBox(height: 36),
 
               Text(_isLogin ? 'Welcome back!' : 'Create Account',
-                  style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.textDark)),
+                  style: const TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textDark)),
               const SizedBox(height: 4),
               Text(
-                _isLogin ? 'Sign in to manage your properties' : 'Join as a property owner',
-                style: const TextStyle(fontSize: 14, color: AppColors.textMuted),
+                _isLogin
+                    ? 'Sign in to manage your properties'
+                    : 'Join as a property owner',
+                style:
+                    const TextStyle(fontSize: 14, color: AppColors.textMuted),
               ),
 
               const SizedBox(height: 28),
@@ -179,105 +222,6 @@ class _LoginScreenState extends State<LoginScreen> {
               // ── Google Button ──
               _GoogleButton(loading: _gLoading, onTap: _signInWithGoogle),
 
-              const SizedBox(height: 20),
-
-              // ── Divider ──
-              Row(children: [
-                const Expanded(child: Divider(color: AppColors.border)),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  child: Text('or use email',
-                      style: const TextStyle(fontSize: 12, color: AppColors.textLight)),
-                ),
-                const Expanded(child: Divider(color: AppColors.border)),
-              ]),
-
-              const SizedBox(height: 20),
-
-              // ── Register only ──
-              if (!_isLogin) ...[
-                _InputField(label: 'Full Name', hint: 'Enter your full name',
-                    ctrl: _nameCtrl, icon: Icons.person_outline_rounded),
-                const SizedBox(height: 14),
-                _InputField(label: 'Phone Number', hint: 'Enter phone number',
-                    ctrl: _phoneCtrl, icon: Icons.phone_outlined,
-                    keyboard: TextInputType.phone),
-                const SizedBox(height: 14),
-              ],
-
-              // ── Email ──
-              _InputField(label: 'Email', hint: 'Enter your email',
-                  ctrl: _emailCtrl, icon: Icons.email_outlined,
-                  keyboard: TextInputType.emailAddress),
-              const SizedBox(height: 14),
-
-              // ── Password ──
-              _PasswordInput(ctrl: _passwordCtrl, obscure: _obscure,
-                  onToggle: () => setState(() => _obscure = !_obscure)),
-
-              // ── Forgot Password ──
-              if (_isLogin) ...[
-                const SizedBox(height: 10),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: GestureDetector(
-                    onTap: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const ForgotPasswordScreen())),
-                    child: const Text('Forgot Password?',
-                        style: TextStyle(fontSize: 13, color: AppColors.primary,
-                            fontWeight: FontWeight.w600)),
-                  ),
-                ),
-              ],
-
-              const SizedBox(height: 28),
-
-              // ── Submit Button ──
-              SizedBox(
-                width: double.infinity, height: 54,
-                child: ElevatedButton(
-                  onPressed: _loading ? null : _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    elevation: 0,
-                  ),
-                  child: _loading
-                      ? const SizedBox(width: 22, height: 22,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                      : Text(_isLogin ? 'Sign In' : 'Create Account',
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700,
-                              color: Colors.white)),
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // ── Toggle ──
-              Center(
-                child: GestureDetector(
-                  onTap: () => setState(() {
-                    _isLogin = !_isLogin;
-                    _emailCtrl.clear();
-                    _passwordCtrl.clear();
-                  }),
-                  child: RichText(
-                    text: TextSpan(
-                      style: const TextStyle(fontSize: 14),
-                      children: [
-                        TextSpan(
-                          text: _isLogin ? "Don't have an account? " : 'Already have an account? ',
-                          style: const TextStyle(color: AppColors.textMuted),
-                        ),
-                        TextSpan(
-                          text: _isLogin ? 'Register' : 'Sign In',
-                          style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
               const SizedBox(height: 24),
             ],
           ),
@@ -296,35 +240,51 @@ class _GoogleButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: double.infinity, height: 54,
+      width: double.infinity,
+      height: 54,
       child: OutlinedButton(
         onPressed: loading ? null : onTap,
         style: OutlinedButton.styleFrom(
           backgroundColor: Colors.white,
           side: const BorderSide(color: AppColors.border, width: 1.5),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           elevation: 0,
         ),
         child: loading
-            ? const SizedBox(width: 22, height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.primary))
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2.5, color: AppColors.primary))
             : Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 // Google G icon
                 Container(
-                  width: 26, height: 26,
+                  width: 26,
+                  height: 26,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(4),
                     color: Colors.white,
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 4)],
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.1),
+                          blurRadius: 4)
+                    ],
                   ),
                   child: const Center(
                     child: Text('G',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF4285F4))),
+                        style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF4285F4))),
                   ),
                 ),
                 const SizedBox(width: 12),
                 const Text('Continue with Google',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textDark)),
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textDark)),
               ]),
       ),
     );
@@ -340,16 +300,21 @@ class _InputField extends StatelessWidget {
   final TextInputType? keyboard;
 
   const _InputField({
-    required this.label, required this.hint,
-    required this.ctrl, required this.icon, this.keyboard,
-  });
+    required this.label,
+    required this.hint,
+    required this.ctrl,
+    required this.icon,
+  }) : keyboard = null;
 
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(label.toUpperCase(),
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-              color: AppColors.textMuted, letterSpacing: 0.6)),
+          style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textMuted,
+              letterSpacing: 0.6)),
       const SizedBox(height: 6),
       TextField(
         controller: ctrl,
@@ -357,15 +322,21 @@ class _InputField extends StatelessWidget {
         decoration: InputDecoration(
           hintText: hint,
           prefixIcon: Icon(icon, color: AppColors.textLight, size: 20),
-          filled: true, fillColor: AppColors.surface,
+          filled: true,
+          fillColor: AppColors.surface,
           hintStyle: const TextStyle(color: AppColors.textLight, fontSize: 14),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: AppColors.border)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: AppColors.border)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide:
+                  const BorderSide(color: AppColors.primary, width: 1.5)),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
         ),
       ),
     ]);
@@ -377,35 +348,50 @@ class _PasswordInput extends StatelessWidget {
   final TextEditingController ctrl;
   final bool obscure;
   final VoidCallback onToggle;
-  const _PasswordInput({required this.ctrl, required this.obscure, required this.onToggle});
+  const _PasswordInput(
+      {required this.ctrl, required this.obscure, required this.onToggle});
 
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Text('PASSWORD',
-          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-              color: AppColors.textMuted, letterSpacing: 0.6)),
+          style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textMuted,
+              letterSpacing: 0.6)),
       const SizedBox(height: 6),
       TextField(
         controller: ctrl,
         obscureText: obscure,
         decoration: InputDecoration(
           hintText: 'Enter your password',
-          prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.textLight, size: 20),
+          prefixIcon: const Icon(Icons.lock_outline_rounded,
+              color: AppColors.textLight, size: 20),
           suffixIcon: IconButton(
-            icon: Icon(obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                color: AppColors.textLight, size: 20),
+            icon: Icon(
+                obscure
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+                color: AppColors.textLight,
+                size: 20),
             onPressed: onToggle,
           ),
-          filled: true, fillColor: AppColors.surface,
+          filled: true,
+          fillColor: AppColors.surface,
           hintStyle: const TextStyle(color: AppColors.textLight, fontSize: 14),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: AppColors.border)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: AppColors.border)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide:
+                  const BorderSide(color: AppColors.primary, width: 1.5)),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
         ),
       ),
     ]);

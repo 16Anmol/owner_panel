@@ -263,6 +263,7 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
   bool _loading = false;
   bool _sending = false;
   bool _uploading = false;
+  String _uploadLabel = 'Uploading…';
   String? _blocked;
   String? _lastTs;
   Timer? _timer;
@@ -301,7 +302,11 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
       if (path == null) return;
       try {
         final bytes = await XFile(path).readAsBytes();
-        if (mounted) setState(() => _uploading = true);
+        if (mounted)
+          setState(() {
+            _uploading = true;
+            _uploadLabel = 'Processing audio…';
+          });
         final res = await ApiService.ownerUploadChatAudio(
             chatId: widget.chatId,
             bytes: bytes,
@@ -447,7 +452,10 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
       return;
     }
 
-    setState(() => _uploading = true);
+    setState(() {
+      _uploading = true;
+      _uploadLabel = 'Uploading photo…';
+    });
     try {
       final res = await ApiService.ownerUploadChatPhoto(
           chatId: widget.chatId, bytes: bytes, fileName: name);
@@ -647,23 +655,6 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
         ],
       ),
       body: Column(children: [
-        // Info banner
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-          color: AppColors.primaryLight,
-          child: const Row(children: [
-            Icon(Icons.info_outline_rounded,
-                size: 14, color: AppColors.primary),
-            SizedBox(width: 8),
-            Expanded(
-                child: Text(
-              'Phone numbers are blocked. Share text, images and links safely.',
-              style: TextStyle(
-                  fontSize: 11, color: AppColors.primary, height: 1.3),
-            )),
-          ]),
-        ),
-
         // Messages
         Expanded(
           child: _loading
@@ -719,15 +710,15 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
           Container(
             color: AppColors.primaryLight,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: const Row(children: [
-              SizedBox(
+            child: Row(children: [
+              const SizedBox(
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(
                       color: AppColors.primary, strokeWidth: 2)),
-              SizedBox(width: 10),
-              Text('Uploading photo…',
-                  style: TextStyle(
+              const SizedBox(width: 10),
+              Text(_uploadLabel,
+                  style: const TextStyle(
                       fontSize: 13,
                       color: AppColors.primary,
                       fontWeight: FontWeight.w600)),

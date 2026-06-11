@@ -57,6 +57,8 @@ class ApiService {
     required String email,
     required String phone,
     required String password,
+    String state = '',
+    String city = '',
   }) async {
     final res = await http.post(Uri.parse('$baseUrl/auth/register'),
         headers: await _headers(auth: false),
@@ -64,7 +66,9 @@ class ApiService {
           'name': name,
           'email': email,
           'phone': phone,
-          'password': password
+          'password': password,
+          'state': state,
+          'city': city
         }));
     return _handle(res);
   }
@@ -159,12 +163,33 @@ class ApiService {
     return _handle(res);
   }
 
+  static Future<Map<String, dynamic>> updateProfile(
+      Map<String, dynamic> data) async {
+    final res = await http.put(Uri.parse('$baseUrl/auth/profile'),
+        headers: await _headers(), body: jsonEncode(data));
+    return _handle(res);
+  }
+
+  static Future<List<String>> searchCities(String state, String query) async {
+    if (state.isEmpty) return [];
+    final uri = Uri.parse('$baseUrl/locations/cities')
+        .replace(queryParameters: {'state': state, 'search': query});
+    try {
+      final res = await http.get(uri, headers: await _headers(auth: false));
+      final data = _handle(res);
+      return (data['cities'] as List? ?? []).map((e) => e.toString()).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   // ── PROPERTIES ───────────────────────────────────────────
   static Future<Map<String, dynamic>> createProperty({
     required String propertyType,
     required String propertyName,
     required String location,
     String localLandmark = '',
+    String mapLink = '',
     required Map<String, dynamic> details,
   }) async {
     final body = {
@@ -172,6 +197,7 @@ class ApiService {
       'propertyName': propertyName,
       'location': location,
       'localLandmark': localLandmark,
+      'mapLink': mapLink,
       ...details,
     };
     final res = await http.post(Uri.parse('$baseUrl/properties'),
@@ -323,6 +349,11 @@ class ApiService {
     String? registryFileName,
     Uint8List? nocBytes,
     String? nocFileName,
+    String? idType,
+    Uint8List? idFrontBytes,
+    String? idFrontFileName,
+    Uint8List? idBackBytes,
+    String? idBackFileName,
   }) async {
     final token = await getToken();
     final request = http.MultipartRequest(
@@ -346,6 +377,26 @@ class ApiService {
         nocBytes,
         filename: nocFileName ?? 'noc.pdf',
         contentType: MediaType.parse(_mimeFor(nocFileName ?? 'noc.pdf')),
+      ));
+    }
+    if (idType != null && idType.isNotEmpty) {
+      request.fields['idType'] = idType;
+    }
+    if (idFrontBytes != null) {
+      request.files.add(http.MultipartFile.fromBytes(
+        'idFront',
+        idFrontBytes,
+        filename: idFrontFileName ?? 'id_front.jpg',
+        contentType:
+            MediaType.parse(_mimeFor(idFrontFileName ?? 'id_front.jpg')),
+      ));
+    }
+    if (idBackBytes != null) {
+      request.files.add(http.MultipartFile.fromBytes(
+        'idBack',
+        idBackBytes,
+        filename: idBackFileName ?? 'id_back.jpg',
+        contentType: MediaType.parse(_mimeFor(idBackFileName ?? 'id_back.jpg')),
       ));
     }
 
@@ -386,6 +437,25 @@ class ApiService {
   static Future<Map<String, dynamic>> submitProblem(String message) async {
     final res = await http.post(Uri.parse('$baseUrl/customers/owner-support'),
         headers: await _headers(), body: jsonEncode({'message': message}));
+    return _handle(res);
+  }
+
+  static Future<Map<String, dynamic>> saveOwnerDetails(
+      Map<String, String> details) async {
+    final res = await http.patch(Uri.parse('$baseUrl/auth/owner-details'),
+        headers: await _headers(), body: jsonEncode(details));
+    return _handle(res);
+  }
+
+  static Future<Map<String, dynamic>> createPaymentLink() async {
+    final res = await http.post(Uri.parse('$baseUrl/auth/payment/create-link'),
+        headers: await _headers());
+    return _handle(res);
+  }
+
+  static Future<Map<String, dynamic>> paymentStatus() async {
+    final res = await http.get(Uri.parse('$baseUrl/auth/payment/status'),
+        headers: await _headers());
     return _handle(res);
   }
 

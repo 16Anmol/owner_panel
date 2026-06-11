@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import 'main_shell.dart';
+// ignore: unused_import
+import 'onboarding_payment_screen.dart'; // kept for re-enabling payment
 
 class OtpScreen extends StatefulWidget {
   final String email;
-  final String type;       // 'verify' | 'reset'
-  final String? devOtp;    // shown in dev mode
+  final String type; // 'verify' | 'reset'
+  final String? devOtp; // shown in dev mode
 
   const OtpScreen({
     super.key,
@@ -20,18 +22,27 @@ class OtpScreen extends StatefulWidget {
 }
 
 class _OtpScreenState extends State<OtpScreen> {
-  final _otpCtrl  = TextEditingController();
-  bool  _loading  = false;
+  final _otpCtrl = TextEditingController();
+  bool _loading = false;
   String? _error;
 
   Future<void> _verify() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      await ApiService.verifyEmailOTP(email: widget.email, otp: _otpCtrl.text.trim());
-      if (mounted) Navigator.pushAndRemoveUntil(context,
-          MaterialPageRoute(builder: (_) => const MainShell()), (_) => false);
+      await ApiService.verifyEmailOTP(
+          email: widget.email, otp: _otpCtrl.text.trim());
+      if (mounted)
+        Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const MainShell()),
+            (_) => false); // payment paused
     } catch (e) {
-      setState(() { _error = e.toString().replaceAll('Exception: ', ''); });
+      setState(() {
+        _error = e.toString().replaceAll('Exception: ', '');
+      });
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -40,8 +51,9 @@ class _OtpScreenState extends State<OtpScreen> {
   Future<void> _resend() async {
     try {
       await ApiService.resendOTP(email: widget.email, type: widget.type);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('OTP resent!'), backgroundColor: AppColors.success));
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('OTP resent!'), backgroundColor: AppColors.success));
     } catch (_) {}
   }
 
@@ -51,8 +63,10 @@ class _OtpScreenState extends State<OtpScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Verify Email',
-            style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.textDark)),
-        backgroundColor: AppColors.background, elevation: 0,
+            style: TextStyle(
+                fontWeight: FontWeight.w800, color: AppColors.textDark)),
+        backgroundColor: AppColors.background,
+        elevation: 0,
         leading: const BackButton(color: AppColors.textDark),
       ),
       body: Padding(
@@ -63,7 +77,10 @@ class _OtpScreenState extends State<OtpScreen> {
               style: TextStyle(fontSize: 15, color: AppColors.textMuted)),
           const SizedBox(height: 8),
           Text(widget.email,
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textDark)),
+              style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark)),
 
           // Dev hint
           if (widget.devOtp != null) ...[
@@ -76,7 +93,10 @@ class _OtpScreenState extends State<OtpScreen> {
                 border: Border.all(color: const Color(0xFFF9A825)),
               ),
               child: Text('Dev OTP: ${widget.devOtp}',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFE65100))),
+                  style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFFE65100))),
             ),
           ],
 
@@ -85,22 +105,28 @@ class _OtpScreenState extends State<OtpScreen> {
             controller: _otpCtrl,
             keyboardType: TextInputType.number,
             maxLength: 6,
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: 8),
+            style: const TextStyle(
+                fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: 8),
             textAlign: TextAlign.center,
             decoration: InputDecoration(
               hintText: '------',
               counterText: '',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
                   borderSide: const BorderSide(color: AppColors.border)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.primary, width: 2)),
-              filled: true, fillColor: Colors.white,
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide:
+                      const BorderSide(color: AppColors.primary, width: 2)),
+              filled: true,
+              fillColor: Colors.white,
             ),
           ),
 
           if (_error != null) ...[
             const SizedBox(height: 10),
-            Text(_error!, style: const TextStyle(color: AppColors.error, fontSize: 13)),
+            Text(_error!,
+                style: const TextStyle(color: AppColors.error, fontSize: 13)),
           ],
 
           const SizedBox(height: 24),
@@ -109,19 +135,27 @@ class _OtpScreenState extends State<OtpScreen> {
             child: ElevatedButton(
               onPressed: _loading ? null : _verify,
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary, foregroundColor: Colors.white,
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
               child: _loading
-                  ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
-                  : const Text('Verify OTP', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  ? const CircularProgressIndicator(
+                      color: Colors.white, strokeWidth: 2)
+                  : const Text('Verify OTP',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             ),
           ),
           const SizedBox(height: 16),
-          Center(child: TextButton(
+          Center(
+              child: TextButton(
             onPressed: _resend,
-            child: const Text('Resend OTP', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600)),
+            child: const Text('Resend OTP',
+                style: TextStyle(
+                    color: AppColors.primary, fontWeight: FontWeight.w600)),
           )),
         ]),
       ),

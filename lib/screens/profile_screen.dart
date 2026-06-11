@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import 'login_screen.dart';
+import 'edit_profile_screen.dart';
 
 class ProfileTab extends StatefulWidget {
   final void Function(int) onSwitchTab;
@@ -32,6 +33,26 @@ class _ProfileTabState extends State<ProfileTab> {
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  bool get _incompleteProfile {
+    final o = _owner;
+    if (o == null) return false;
+    String s(String k) => (o[k] ?? '').toString();
+    return s('gender').isEmpty ||
+        s('occupation').isEmpty ||
+        s('businessName').isEmpty ||
+        s('address').isEmpty ||
+        s('city').isEmpty ||
+        s('state').isEmpty ||
+        s('pincode').isEmpty;
+  }
+
+  Future<void> _openEdit() async {
+    if (_owner == null) return;
+    final changed = await Navigator.push(context,
+        MaterialPageRoute(builder: (_) => EditProfileScreen(owner: _owner!)));
+    if (changed == true) _load();
   }
 
   Future<void> _logout() async {
@@ -76,7 +97,59 @@ class _ProfileTabState extends State<ProfileTab> {
                   Text(_owner?['email'] ?? '',
                       style: const TextStyle(
                           fontSize: 13, color: AppColors.textMuted)),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
+
+                  // Edit profile button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _openEdit,
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      label: const Text('Edit Profile',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Incomplete profile prompt
+                  if (_incompleteProfile) ...[
+                    GestureDetector(
+                      onTap: _openEdit,
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF3E0),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFFFB74D)),
+                        ),
+                        child: Row(children: [
+                          const Icon(Icons.info_outline_rounded,
+                              color: Color(0xFFE65100), size: 22),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                              child: Text(
+                            'Complete your profile details (business, address & KYC) so customers can trust your listings.',
+                            style: TextStyle(
+                                fontSize: 12.5,
+                                color: Color(0xFFE65100),
+                                fontWeight: FontWeight.w600),
+                          )),
+                          const Text('Update',
+                              style: TextStyle(
+                                  color: Color(0xFFE65100),
+                                  fontWeight: FontWeight.w800)),
+                        ]),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
 
                   // Info cards
                   _InfoCard(items: [
@@ -94,6 +167,36 @@ class _ProfileTabState extends State<ProfileTab> {
                         icon: Icons.verified_user_outlined,
                         label: 'Account',
                         value: _owner?['accountStatus'] ?? '—'),
+                  ]),
+                  const SizedBox(height: 16),
+
+                  _InfoCard(items: [
+                    _InfoRow(
+                        icon: Icons.business_outlined,
+                        label: 'Business / Name',
+                        value: _owner?['businessName']?.toString().isNotEmpty ==
+                                true
+                            ? _owner!['businessName']
+                            : '—'),
+                    _InfoRow(
+                        icon: Icons.work_outline,
+                        label: 'Occupation',
+                        value:
+                            _owner?['occupation']?.toString().isNotEmpty == true
+                                ? _owner!['occupation']
+                                : '—'),
+                    _InfoRow(
+                        icon: Icons.location_city_rounded,
+                        label: 'City',
+                        value: _owner?['city']?.toString().isNotEmpty == true
+                            ? _owner!['city']
+                            : '—'),
+                    _InfoRow(
+                        icon: Icons.map_outlined,
+                        label: 'State',
+                        value: _owner?['state']?.toString().isNotEmpty == true
+                            ? _owner!['state']
+                            : '—'),
                   ]),
                   const SizedBox(height: 16),
 

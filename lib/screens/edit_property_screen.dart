@@ -1,8 +1,5 @@
-import 'dart:async';
 import 'dart:typed_data';
 // ignore: avoid_web_libraries_in_flutter, deprecated_member_use
-import 'dart:html' as html;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
@@ -35,162 +32,201 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
 
   // Existing media
   late List<String> _existingPhotos;
-  late bool         _hasRegistry;
-  late bool         _hasNoc;
+  late bool _hasRegistry;
+  late bool _hasNoc;
 
   // New uploads
   final List<Uint8List> _newPhotoBytes = [];
-  final List<String>    _newPhotoNames = [];
+  final List<String> _newPhotoNames = [];
   Uint8List? _newRegistryBytes;
-  String?    _newRegistryName;
+  String? _newRegistryName;
   Uint8List? _newNocBytes;
-  String?    _newNocName;
+  String? _newNocName;
+  // ID proof (Aadhaar / PAN) — front + back
+  late bool _hasIdFront;
+  late bool _hasIdBack;
+  String _idType = 'aadhaar'; // 'aadhaar' | 'pan'
+  Uint8List? _newIdFrontBytes;
+  String? _newIdFrontName;
+  Uint8List? _newIdBackBytes;
+  String? _newIdBackName;
   // ignore: unused_field
-  bool       _replacePhotos = false;
+  bool _replacePhotos = false;
 
   // Common fields
-  final _nameCtrl     = TextEditingController();
+  final _nameCtrl = TextEditingController();
   final _locationCtrl = TextEditingController();
   final _landmarkCtrl = TextEditingController();
 
   // Plot fields
-  final _plotIdCtrl     = TextEditingController();
-  final _plotSizeCtrl   = TextEditingController();
+  final _plotIdCtrl = TextEditingController();
+  final _plotSizeCtrl = TextEditingController();
   final _plotLengthCtrl = TextEditingController();
-  final _plotWidthCtrl  = TextEditingController();
+  final _plotWidthCtrl = TextEditingController();
   final _totalPriceCtrl = TextEditingController();
-  final _descCtrl       = TextEditingController();
+  final _descCtrl = TextEditingController();
   String? _plotType, _facing, _ownershipType;
   final List<String> _facilities = [];
 
   // PG fields
-  final _totalRoomsCtrl  = TextEditingController();
-  final _acRoomsCtrl     = TextEditingController();
-  final _nonAcCtrl       = TextEditingController();
+  final _totalRoomsCtrl = TextEditingController();
+  final _acRoomsCtrl = TextEditingController();
+  final _nonAcCtrl = TextEditingController();
   final _singlePriceCtrl = TextEditingController();
-  final _singleDepCtrl   = TextEditingController();
+  final _singleDepCtrl = TextEditingController();
   final _doublePriceCtrl = TextEditingController();
-  final _doubleDepCtrl   = TextEditingController();
+  final _doubleDepCtrl = TextEditingController();
   String _occupancy = 'any', _roomType = 'sharing';
   bool _commonKitchen = false, _privateKitchen = false;
   final List<String> _pgAvailFor = [];
 
   // Guest fields
   final _gSinglePriceCtrl = TextEditingController();
-  final _gSingleDepCtrl   = TextEditingController();
+  final _gSingleDepCtrl = TextEditingController();
   final _gDoublePriceCtrl = TextEditingController();
-  final _gDoubleDepCtrl   = TextEditingController();
+  final _gDoubleDepCtrl = TextEditingController();
   final _gFamilyPriceCtrl = TextEditingController();
-  final _gFamilyDepCtrl   = TextEditingController();
+  final _gFamilyDepCtrl = TextEditingController();
 
   // ── whether the property was suspended/rejected ──
   bool get _isSuspendedOrRejected =>
       _status == 'suspended' || _status == 'rejected';
 
   // ── lock rules ──
-  bool get _photosLocked   => !_isSuspendedOrRejected && _existingPhotos.isNotEmpty;
+  bool get _photosLocked =>
+      !_isSuspendedOrRejected && _existingPhotos.isNotEmpty;
   bool get _registryLocked => !_isSuspendedOrRejected && _hasRegistry;
-  bool get _nocLocked      => !_isSuspendedOrRejected && _hasNoc;
+  bool get _nocLocked => !_isSuspendedOrRejected && _hasNoc;
+  bool get _idFrontLocked => !_isSuspendedOrRejected && _hasIdFront;
+  bool get _idBackLocked => !_isSuspendedOrRejected && _hasIdBack;
 
   // ── completion check ──
-  bool get _photosComplete   => _existingPhotos.isNotEmpty || _newPhotoBytes.isNotEmpty;
+  bool get _photosComplete =>
+      _existingPhotos.isNotEmpty || _newPhotoBytes.isNotEmpty;
   bool get _registryComplete => _hasRegistry || _newRegistryBytes != null;
-  bool get _nocComplete      => _hasNoc      || _newNocBytes      != null;
-  bool get _allComplete      => _photosComplete && _registryComplete && _nocComplete;
+  bool get _nocComplete => _hasNoc || _newNocBytes != null;
+  bool get _idFrontComplete => _hasIdFront || _newIdFrontBytes != null;
+  bool get _idBackComplete => _hasIdBack || _newIdBackBytes != null;
+  bool get _idComplete => _idFrontComplete && _idBackComplete;
+  bool get _allComplete =>
+      _photosComplete && _registryComplete && _nocComplete && _idComplete;
 
   @override
   void initState() {
     super.initState();
     final p = widget.property;
-    _type   = p['propertyType'] as String? ?? '';
-    _id     = p['_id']          as String? ?? '';
-    _status = p['status']        as String? ?? 'under_review';
+    _type = p['propertyType'] as String? ?? '';
+    _id = p['_id'] as String? ?? '';
+    _status = p['status'] as String? ?? 'under_review';
 
     _existingPhotos = List<String>.from(p['photos'] as List? ?? []);
-    _hasRegistry    = (p['registryDocument'] as String?)?.isNotEmpty == true;
-    _hasNoc         = (p['nocDocument']      as String?)?.isNotEmpty == true;
+    _hasRegistry = (p['registryDocument'] as String?)?.isNotEmpty == true;
+    _hasNoc = (p['nocDocument'] as String?)?.isNotEmpty == true;
+    _hasIdFront = (p['idProofFront'] as String?)?.isNotEmpty == true;
+    _hasIdBack = (p['idProofBack'] as String?)?.isNotEmpty == true;
+    final idT = (p['idProofType'] as String?) ?? '';
+    _idType = (idT == 'pan' || idT == 'aadhaar') ? idT : 'aadhaar';
 
-    _nameCtrl.text     = p['propertyName']  ?? '';
-    _locationCtrl.text = p['location']      ?? '';
+    _nameCtrl.text = p['propertyName'] ?? '';
+    _locationCtrl.text = p['location'] ?? '';
     _landmarkCtrl.text = p['localLandmark'] ?? '';
 
     if (_type == 'plot') {
       final d = (p['plotDetails'] as Map<String, dynamic>?) ?? {};
-      _plotIdCtrl.text     = d['plotId']                       ?? '';
-      _plotSizeCtrl.text   = '${d['plotSize']                  ?? ''}';
+      _plotIdCtrl.text = d['plotId'] ?? '';
+      _plotSizeCtrl.text = '${d['plotSize'] ?? ''}';
       _plotLengthCtrl.text = '${d['plotDimensions']?['length'] ?? ''}';
-      _plotWidthCtrl.text  = '${d['plotDimensions']?['width']  ?? ''}';
-      _totalPriceCtrl.text = '${d['totalPrice']                ?? ''}';
-      _descCtrl.text       = d['description'] ?? '';
-      _plotType      = d['plotType']      as String?;
-      _facing        = d['facing']        as String?;
+      _plotWidthCtrl.text = '${d['plotDimensions']?['width'] ?? ''}';
+      _totalPriceCtrl.text = '${d['totalPrice'] ?? ''}';
+      _descCtrl.text = d['description'] ?? '';
+      _plotType = d['plotType'] as String?;
+      _facing = d['facing'] as String?;
       _ownershipType = d['ownershipType'] as String?;
       final f = d['facilities'];
-      if (f is List) { _facilities.addAll(f.map((e) => e.toString())); }
+      if (f is List) {
+        _facilities.addAll(f.map((e) => e.toString()));
+      }
     } else if (_type == 'pg') {
       final d = (p['pgDetails'] as Map<String, dynamic>?) ?? {};
-      _totalRoomsCtrl.text  = '${d['totalRooms']  ?? ''}';
-      _acRoomsCtrl.text     = '${d['acRooms']     ?? ''}';
-      _nonAcCtrl.text       = '${d['nonAcRooms']  ?? ''}';
-      _singlePriceCtrl.text = '${d['sharingPricing']?['singleRoom']?['price']   ?? ''}';
-      _singleDepCtrl.text   = '${d['sharingPricing']?['singleRoom']?['deposit'] ?? ''}';
-      _doublePriceCtrl.text = '${d['sharingPricing']?['doubleRoom']?['price']   ?? ''}';
-      _doubleDepCtrl.text   = '${d['sharingPricing']?['doubleRoom']?['deposit'] ?? ''}';
-      _descCtrl.text        = d['description'] ?? '';
-      _occupancy      = d['occupancyType'] as String? ?? 'any';
-      _roomType       = d['roomType']      as String? ?? 'sharing';
-      _commonKitchen  = d['commonKitchen']  as bool? ?? false;
+      _totalRoomsCtrl.text = '${d['totalRooms'] ?? ''}';
+      _acRoomsCtrl.text = '${d['acRooms'] ?? ''}';
+      _nonAcCtrl.text = '${d['nonAcRooms'] ?? ''}';
+      _singlePriceCtrl.text =
+          '${d['sharingPricing']?['singleRoom']?['price'] ?? ''}';
+      _singleDepCtrl.text =
+          '${d['sharingPricing']?['singleRoom']?['deposit'] ?? ''}';
+      _doublePriceCtrl.text =
+          '${d['sharingPricing']?['doubleRoom']?['price'] ?? ''}';
+      _doubleDepCtrl.text =
+          '${d['sharingPricing']?['doubleRoom']?['deposit'] ?? ''}';
+      _descCtrl.text = d['description'] ?? '';
+      _occupancy = d['occupancyType'] as String? ?? 'any';
+      _roomType = d['roomType'] as String? ?? 'sharing';
+      _commonKitchen = d['commonKitchen'] as bool? ?? false;
       _privateKitchen = d['privateKitchen'] as bool? ?? false;
       final av = d['availableFor'];
-      if (av is List) { _pgAvailFor.addAll(av.map((e) => e.toString())); }
-      final f  = d['facilities'];
-      if (f  is List) { _facilities.addAll(f.map((e) => e.toString())); }
+      if (av is List) {
+        _pgAvailFor.addAll(av.map((e) => e.toString()));
+      }
+      final f = d['facilities'];
+      if (f is List) {
+        _facilities.addAll(f.map((e) => e.toString()));
+      }
     } else if (_type == 'guest') {
       final d = (p['guestRoomDetails'] as Map<String, dynamic>?) ?? {};
-      _totalRoomsCtrl.text   = '${d['totalRooms'] ?? ''}';
-      _acRoomsCtrl.text      = '${d['acRooms']    ?? ''}';
-      _nonAcCtrl.text        = '${d['nonAcRooms'] ?? ''}';
-      _gSinglePriceCtrl.text = '${d['pricing']?['singleRoom']?['price']   ?? ''}';
-      _gSingleDepCtrl.text   = '${d['pricing']?['singleRoom']?['deposit'] ?? ''}';
-      _gDoublePriceCtrl.text = '${d['pricing']?['doubleRoom']?['price']   ?? ''}';
-      _gDoubleDepCtrl.text   = '${d['pricing']?['doubleRoom']?['deposit'] ?? ''}';
-      _gFamilyPriceCtrl.text = '${d['pricing']?['familyRoom']?['price']   ?? ''}';
-      _gFamilyDepCtrl.text   = '${d['pricing']?['familyRoom']?['deposit'] ?? ''}';
+      _totalRoomsCtrl.text = '${d['totalRooms'] ?? ''}';
+      _acRoomsCtrl.text = '${d['acRooms'] ?? ''}';
+      _nonAcCtrl.text = '${d['nonAcRooms'] ?? ''}';
+      _gSinglePriceCtrl.text = '${d['pricing']?['singleRoom']?['price'] ?? ''}';
+      _gSingleDepCtrl.text = '${d['pricing']?['singleRoom']?['deposit'] ?? ''}';
+      _gDoublePriceCtrl.text = '${d['pricing']?['doubleRoom']?['price'] ?? ''}';
+      _gDoubleDepCtrl.text = '${d['pricing']?['doubleRoom']?['deposit'] ?? ''}';
+      _gFamilyPriceCtrl.text = '${d['pricing']?['familyRoom']?['price'] ?? ''}';
+      _gFamilyDepCtrl.text = '${d['pricing']?['familyRoom']?['deposit'] ?? ''}';
       _descCtrl.text = d['description'] ?? '';
-      _commonKitchen  = d['commonKitchen']  as bool? ?? false;
+      _commonKitchen = d['commonKitchen'] as bool? ?? false;
       _privateKitchen = d['privateKitchen'] as bool? ?? false;
       final f = d['facilities'];
-      if (f is List) { _facilities.addAll(f.map((e) => e.toString())); }
+      if (f is List) {
+        _facilities.addAll(f.map((e) => e.toString()));
+      }
     }
   }
 
   @override
   void dispose() {
-    for (final c in [_nameCtrl,_locationCtrl,_landmarkCtrl,_plotIdCtrl,
-        _plotSizeCtrl,_plotLengthCtrl,_plotWidthCtrl,_totalPriceCtrl,_descCtrl,
-        _totalRoomsCtrl,_acRoomsCtrl,_nonAcCtrl,_singlePriceCtrl,_singleDepCtrl,
-        _doublePriceCtrl,_doubleDepCtrl,_gSinglePriceCtrl,_gSingleDepCtrl,
-        _gDoublePriceCtrl,_gDoubleDepCtrl,_gFamilyPriceCtrl,_gFamilyDepCtrl]) {
+    for (final c in [
+      _nameCtrl,
+      _locationCtrl,
+      _landmarkCtrl,
+      _plotIdCtrl,
+      _plotSizeCtrl,
+      _plotLengthCtrl,
+      _plotWidthCtrl,
+      _totalPriceCtrl,
+      _descCtrl,
+      _totalRoomsCtrl,
+      _acRoomsCtrl,
+      _nonAcCtrl,
+      _singlePriceCtrl,
+      _singleDepCtrl,
+      _doublePriceCtrl,
+      _doubleDepCtrl,
+      _gSinglePriceCtrl,
+      _gSingleDepCtrl,
+      _gDoublePriceCtrl,
+      _gDoubleDepCtrl,
+      _gFamilyPriceCtrl,
+      _gFamilyDepCtrl
+    ]) {
       c.dispose();
     }
     super.dispose();
   }
 
-  // ── Pick photos ───────────────────────────────────────────────
+  // ── Pick photos (image_picker — works on web + mobile) ───────
   Future<void> _pickPhotos() async {
-    if (kIsWeb) {
-      await _webPickFiles(
-        accept: 'image/*',
-        multiple: true,
-        onPicked: (bytes, name) {
-          setState(() {
-            _newPhotoBytes.add(bytes);
-            _newPhotoNames.add(name);
-            if (_isSuspendedOrRejected) { _replacePhotos = true; }
-          });
-        },
-      );
-    } else {
+    try {
       final picker = ImagePicker();
       final picked = await picker.pickMultiImage(imageQuality: 80);
       if (picked.isEmpty) return;
@@ -204,95 +240,45 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           });
         }
       }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Could not pick photos: $e'),
+            backgroundColor: AppColors.error));
+      }
     }
   }
 
-  // ── Pick a document ───────────────────────────────────────────
+  // ── Pick a document (registry / noc / idFront / idBack) ───────
   Future<void> _pickDocument(String docType) async {
-    if (kIsWeb) {
-      await _webPickFiles(
-        accept: 'image/*,application/pdf',
-        multiple: false,
-        onPicked: (bytes, name) {
-          setState(() {
-            if (docType == 'registry') {
-              _newRegistryBytes = bytes;
-              _newRegistryName  = name;
-            } else {
-              _newNocBytes = bytes;
-              _newNocName  = name;
-            }
-          });
-        },
-      );
-    } else {
+    try {
       final picker = ImagePicker();
-      final xf = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+      final xf =
+          await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
       if (xf == null) return;
       final bytes = await xf.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        if (docType == 'registry') {
+          _newRegistryBytes = bytes;
+          _newRegistryName = xf.name;
+        } else if (docType == 'noc') {
+          _newNocBytes = bytes;
+          _newNocName = xf.name;
+        } else if (docType == 'idFront') {
+          _newIdFrontBytes = bytes;
+          _newIdFrontName = xf.name;
+        } else if (docType == 'idBack') {
+          _newIdBackBytes = bytes;
+          _newIdBackName = xf.name;
+        }
+      });
+    } catch (e) {
       if (mounted) {
-        setState(() {
-          if (docType == 'registry') {
-            _newRegistryBytes = bytes;
-            _newRegistryName  = xf.name;
-          } else {
-            _newNocBytes = bytes;
-            _newNocName  = xf.name;
-          }
-        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Could not pick file: $e'),
+            backgroundColor: AppColors.error));
       }
-    }
-  }
-
-  // ── Web file picker — appends input to DOM to avoid popup blocker ──
-
-  // ── Web file picker ── proven pattern that works in Flutter Web ──────
-  Future<void> _webPickFiles({
-    required String accept,
-    required bool multiple,
-    required void Function(Uint8List bytes, String name) onPicked,
-  }) async {
-    final completer = Completer<List<html.File>>();
-    
-    final input = html.FileUploadInputElement()
-      ..accept = accept
-      ..multiple = multiple
-      ..style.display = 'none';
-
-    // Register listener BEFORE appending/clicking so it's ready
-    input.addEventListener('change', (event) {
-      final files = input.files;
-      if (files != null && files.isNotEmpty) {
-        completer.complete(files.toList());
-      } else {
-        completer.complete([]);
-      }
-    });
-
-    // Also handle cancel (focus returns to window)
-    html.window.addEventListener('focus', (event) {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (!completer.isCompleted) completer.complete([]);
-      });
-    });
-
-    html.document.body!.children.add(input);
-    input.click();
-
-    final files = await completer.future;
-    input.remove();
-
-    for (final file in files) {
-      final reader = html.FileReader();
-      final readerCompleter = Completer<void>();
-      reader.addEventListener('load', (event) {
-        if (!readerCompleter.isCompleted) readerCompleter.complete();
-      });
-      reader.readAsArrayBuffer(file);
-      await readerCompleter.future;
-      
-      final bytes = Uint8List.view(reader.result as ByteBuffer);
-      if (mounted) onPicked(bytes, file.name);
     }
   }
 
@@ -307,9 +293,15 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     }
 
     // For suspended/rejected, require at least something new to be uploaded
-    if (_isSuspendedOrRejected && _newPhotoBytes.isEmpty && _newRegistryBytes == null && _newNocBytes == null) {
+    if (_isSuspendedOrRejected &&
+        _newPhotoBytes.isEmpty &&
+        _newRegistryBytes == null &&
+        _newNocBytes == null &&
+        _newIdFrontBytes == null &&
+        _newIdBackBytes == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Please update at least one photo or document before saving'),
+        content:
+            Text('Please update at least one photo or document before saving'),
         backgroundColor: AppColors.error,
       ));
       return;
@@ -319,37 +311,55 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     try {
       // 1. Save details
       final body = <String, dynamic>{
-        'propertyName':  _nameCtrl.text.trim(),
-        'location':      _locationCtrl.text.trim(),
+        'propertyName': _nameCtrl.text.trim(),
+        'location': _locationCtrl.text.trim(),
         'localLandmark': _landmarkCtrl.text.trim(),
       };
 
       if (_type == 'plot') {
         body.addAll({
-          'plotId': _plotIdCtrl.text.trim(), 'plotType': _plotType,
-          'facing': _facing, 'plotSize': _plotSizeCtrl.text,
-          'plotLength': _plotLengthCtrl.text, 'plotWidth': _plotWidthCtrl.text,
-          'totalPrice': _totalPriceCtrl.text, 'ownershipType': _ownershipType,
-          'facilities': _facilities, 'description': _descCtrl.text.trim(),
+          'plotId': _plotIdCtrl.text.trim(),
+          'plotType': _plotType,
+          'facing': _facing,
+          'plotSize': _plotSizeCtrl.text,
+          'plotLength': _plotLengthCtrl.text,
+          'plotWidth': _plotWidthCtrl.text,
+          'totalPrice': _totalPriceCtrl.text,
+          'ownershipType': _ownershipType,
+          'facilities': _facilities,
+          'description': _descCtrl.text.trim(),
         });
       } else if (_type == 'pg') {
         body.addAll({
-          'totalRooms': _totalRoomsCtrl.text, 'acRooms': _acRoomsCtrl.text,
-          'nonAcRooms': _nonAcCtrl.text, 'occupancyType': _occupancy,
-          'roomType': _roomType, 'singlePrice': _singlePriceCtrl.text,
-          'singleDeposit': _singleDepCtrl.text, 'doublePrice': _doublePriceCtrl.text,
-          'doubleDeposit': _doubleDepCtrl.text, 'availableFor': _pgAvailFor,
-          'facilities': _facilities, 'commonKitchen': _commonKitchen,
-          'privateKitchen': _privateKitchen, 'description': _descCtrl.text.trim(),
+          'totalRooms': _totalRoomsCtrl.text,
+          'acRooms': _acRoomsCtrl.text,
+          'nonAcRooms': _nonAcCtrl.text,
+          'occupancyType': _occupancy,
+          'roomType': _roomType,
+          'singlePrice': _singlePriceCtrl.text,
+          'singleDeposit': _singleDepCtrl.text,
+          'doublePrice': _doublePriceCtrl.text,
+          'doubleDeposit': _doubleDepCtrl.text,
+          'availableFor': _pgAvailFor,
+          'facilities': _facilities,
+          'commonKitchen': _commonKitchen,
+          'privateKitchen': _privateKitchen,
+          'description': _descCtrl.text.trim(),
         });
       } else if (_type == 'guest') {
         body.addAll({
-          'totalRooms': _totalRoomsCtrl.text, 'acRooms': _acRoomsCtrl.text,
-          'nonAcRooms': _nonAcCtrl.text, 'singlePrice': _gSinglePriceCtrl.text,
-          'singleDeposit': _gSingleDepCtrl.text, 'doublePrice': _gDoublePriceCtrl.text,
-          'doubleDeposit': _gDoubleDepCtrl.text, 'familyPrice': _gFamilyPriceCtrl.text,
-          'familyDeposit': _gFamilyDepCtrl.text, 'facilities': _facilities,
-          'commonKitchen': _commonKitchen, 'privateKitchen': _privateKitchen,
+          'totalRooms': _totalRoomsCtrl.text,
+          'acRooms': _acRoomsCtrl.text,
+          'nonAcRooms': _nonAcCtrl.text,
+          'singlePrice': _gSinglePriceCtrl.text,
+          'singleDeposit': _gSingleDepCtrl.text,
+          'doublePrice': _gDoublePriceCtrl.text,
+          'doubleDeposit': _gDoubleDepCtrl.text,
+          'familyPrice': _gFamilyPriceCtrl.text,
+          'familyDeposit': _gFamilyDepCtrl.text,
+          'facilities': _facilities,
+          'commonKitchen': _commonKitchen,
+          'privateKitchen': _privateKitchen,
           'description': _descCtrl.text.trim(),
         });
       }
@@ -361,18 +371,28 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         await ApiService.uploadPropertyPhotos(
           propertyId: _id,
           imageBytes: _newPhotoBytes,
-          fileNames:  _newPhotoNames,
+          fileNames: _newPhotoNames,
         );
       }
 
       // 3. Upload documents
-      if (_newRegistryBytes != null || _newNocBytes != null) {
+      if (_newRegistryBytes != null ||
+          _newNocBytes != null ||
+          _newIdFrontBytes != null ||
+          _newIdBackBytes != null) {
         await ApiService.uploadDocuments(
-          propertyId:       _id,
-          registryBytes:    _newRegistryBytes,
+          propertyId: _id,
+          registryBytes: _newRegistryBytes,
           registryFileName: _newRegistryName,
-          nocBytes:         _newNocBytes,
-          nocFileName:      _newNocName,
+          nocBytes: _newNocBytes,
+          nocFileName: _newNocName,
+          idType: (_newIdFrontBytes != null || _newIdBackBytes != null)
+              ? _idType
+              : null,
+          idFrontBytes: _newIdFrontBytes,
+          idFrontFileName: _newIdFrontName,
+          idBackBytes: _newIdBackBytes,
+          idBackFileName: _newIdBackName,
         );
       }
 
@@ -395,23 +415,29 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         ));
       }
     } finally {
-      if (mounted) { setState(() => _saving = false); }
+      if (mounted) {
+        setState(() => _saving = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final typeLabel = _type == 'pg' ? '🛏️ PG Room'
-                    : _type == 'guest' ? '🏨 Guest Room' : '🌿 Plot';
+    final typeLabel = _type == 'pg'
+        ? '🛏️ PG Room'
+        : _type == 'guest'
+            ? '🏨 Guest Room'
+            : '🌿 Plot';
     final pendingCount = (_photosComplete ? 0 : 1) +
-                         (_registryComplete ? 0 : 1) +
-                         (_nocComplete ? 0 : 1);
+        (_registryComplete ? 0 : 1) +
+        (_nocComplete ? 0 : 1);
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text('Edit $typeLabel',
-            style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.textDark)),
+            style: const TextStyle(
+                fontWeight: FontWeight.w800, color: AppColors.textDark)),
         backgroundColor: AppColors.background,
         elevation: 0,
         leading: const BackButton(color: AppColors.textDark),
@@ -421,19 +447,28 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
             child: TextButton(
               onPressed: _saving ? null : _save,
               style: TextButton.styleFrom(
-                backgroundColor: _allComplete ? AppColors.primary : AppColors.error,
+                backgroundColor:
+                    _allComplete ? AppColors.primary : AppColors.error,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               ),
               child: _saving
-                  ? const SizedBox(width: 16, height: 16,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2))
                   : Text(
                       _allComplete
-                          ? (_isSuspendedOrRejected ? 'Save & Notify Admin' : 'Save')
+                          ? (_isSuspendedOrRejected
+                              ? 'Save & Notify Admin'
+                              : 'Save')
                           : 'Save ($pendingCount missing)',
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 13),
                     ),
             ),
           ),
@@ -444,7 +479,6 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-
             // ── Suspension/Rejection banner ──────────────────
             if (_isSuspendedOrRejected) ...[
               Container(
@@ -452,64 +486,77 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: _status == 'suspended'
-                      ? const Color(0xFFFFF3E0) : const Color(0xFFFFEBEE),
+                      ? const Color(0xFFFFF3E0)
+                      : const Color(0xFFFFEBEE),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: _status == 'suspended'
-                        ? const Color(0xFFE65100) : AppColors.error,
+                        ? const Color(0xFFE65100)
+                        : AppColors.error,
                     width: 1.5,
                   ),
                 ),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    Icon(
-                      _status == 'suspended'
-                          ? Icons.warning_amber_rounded : Icons.cancel_outlined,
-                      color: _status == 'suspended'
-                          ? const Color(0xFFE65100) : AppColors.error,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _status == 'suspended'
-                          ? 'Property Suspended' : 'Property Rejected',
-                      style: TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w800,
-                        color: _status == 'suspended'
-                            ? const Color(0xFFE65100) : AppColors.error,
-                      ),
-                    ),
-                  ]),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Please update your photos and/or documents below to address the admin\'s concerns, then tap "Save & Notify Admin". The admin will be notified to re-review your listing.',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: _status == 'suspended'
-                          ? const Color(0xFFBF360C) : const Color(0xFFB71C1C),
-                      height: 1.4,
-                    ),
-                  ),
-                  // Show admin reason if available
-                  if ((widget.property['rejectionNote'] as String?)?.isNotEmpty == true) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Admin reason: ${widget.property['rejectionNote']}',
-                        style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600,
-                          color: AppColors.textDark,
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Icon(
+                          _status == 'suspended'
+                              ? Icons.warning_amber_rounded
+                              : Icons.cancel_outlined,
+                          color: _status == 'suspended'
+                              ? const Color(0xFFE65100)
+                              : AppColors.error,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _status == 'suspended'
+                              ? 'Property Suspended'
+                              : 'Property Rejected',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: _status == 'suspended'
+                                ? const Color(0xFFE65100)
+                                : AppColors.error,
+                          ),
+                        ),
+                      ]),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Please update your photos and/or documents below to address the admin\'s concerns, then tap "Save & Notify Admin". The admin will be notified to re-review your listing.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: _status == 'suspended'
+                              ? const Color(0xFFBF360C)
+                              : const Color(0xFFB71C1C),
+                          height: 1.4,
                         ),
                       ),
-                    ),
-                  ],
-                ]),
+                      // Show admin reason if available
+                      if ((widget.property['rejectionNote'] as String?)
+                              ?.isNotEmpty ==
+                          true) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.6),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            'Admin reason: ${widget.property['rejectionNote']}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textDark,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ]),
               ),
               const SizedBox(height: 16),
             ],
@@ -522,26 +569,40 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                 decoration: BoxDecoration(
                   color: const Color(0xFFFFF3E0),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE65100).withValues(alpha: 0.4)),
+                  border: Border.all(
+                      color: const Color(0xFFE65100).withValues(alpha: 0.4)),
                 ),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Row(children: [
-                    Icon(Icons.warning_amber_rounded, color: Color(0xFFE65100), size: 18),
-                    SizedBox(width: 8),
-                    Text('Required uploads missing',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFE65100))),
-                  ]),
-                  const SizedBox(height: 6),
-                  if (!_photosComplete)
-                    const Text('• Property photos (at least 1)',
-                        style: TextStyle(fontSize: 12, color: Color(0xFFBF360C))),
-                  if (!_registryComplete)
-                    const Text('• Registry / ownership document',
-                        style: TextStyle(fontSize: 12, color: Color(0xFFBF360C))),
-                  if (!_nocComplete)
-                    const Text('• NOC document',
-                        style: TextStyle(fontSize: 12, color: Color(0xFFBF360C))),
-                ]),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(children: [
+                        Icon(Icons.warning_amber_rounded,
+                            color: Color(0xFFE65100), size: 18),
+                        SizedBox(width: 8),
+                        Text('Required uploads missing',
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFFE65100))),
+                      ]),
+                      const SizedBox(height: 6),
+                      if (!_photosComplete)
+                        const Text('• Property photos (at least 1)',
+                            style: TextStyle(
+                                fontSize: 12, color: Color(0xFFBF360C))),
+                      if (!_registryComplete)
+                        const Text('• Registry / ownership document',
+                            style: TextStyle(
+                                fontSize: 12, color: Color(0xFFBF360C))),
+                      if (!_idComplete)
+                        const Text('• ID proof (Aadhaar/PAN) — front & back',
+                            style: TextStyle(
+                                fontSize: 12, color: Color(0xFFBF360C))),
+                      if (!_nocComplete)
+                        const Text('• NOC document',
+                            style: TextStyle(
+                                fontSize: 12, color: Color(0xFFBF360C))),
+                    ]),
               ),
               const SizedBox(height: 16),
             ],
@@ -549,11 +610,11 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
             // ── Photos section ───────────────────────────────
             _PhotosSection(
               existingPhotos: _existingPhotos,
-              newPhotoBytes:  _newPhotoBytes,
-              isLocked:       _photosLocked,
-              isSuspended:    _isSuspendedOrRejected,
-              onAdd:          _pickPhotos,
-              onRemoveNew:    (i) => setState(() {
+              newPhotoBytes: _newPhotoBytes,
+              isLocked: _photosLocked,
+              isSuspended: _isSuspendedOrRejected,
+              onAdd: _pickPhotos,
+              onRemoveNew: (i) => setState(() {
                 _newPhotoBytes.removeAt(i);
                 _newPhotoNames.removeAt(i);
               }),
@@ -562,43 +623,82 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
 
             // ── Documents section ────────────────────────────
             _DocumentsSection(
-              hasRegistry:        _hasRegistry,
-              hasNoc:             _hasNoc,
-              isRegistryLocked:   _registryLocked,
-              isNocLocked:        _nocLocked,
-              isSuspended:        _isSuspendedOrRejected,
-              newRegistryPicked:  _newRegistryBytes != null,
-              newRegistryName:    _newRegistryName,
-              newNocPicked:       _newNocBytes != null,
-              newNocName:         _newNocName,
-              onPickRegistry:     () => _pickDocument('registry'),
-              onPickNoc:          () => _pickDocument('noc'),
-              onClearRegistry:    () => setState(() { _newRegistryBytes = null; _newRegistryName = null; }),
-              onClearNoc:         () => setState(() { _newNocBytes = null;       _newNocName      = null; }),
+              hasRegistry: _hasRegistry,
+              hasNoc: _hasNoc,
+              isRegistryLocked: _registryLocked,
+              isNocLocked: _nocLocked,
+              isSuspended: _isSuspendedOrRejected,
+              newRegistryPicked: _newRegistryBytes != null,
+              newRegistryName: _newRegistryName,
+              newNocPicked: _newNocBytes != null,
+              newNocName: _newNocName,
+              onPickRegistry: () => _pickDocument('registry'),
+              onPickNoc: () => _pickDocument('noc'),
+              onClearRegistry: () => setState(() {
+                _newRegistryBytes = null;
+                _newRegistryName = null;
+              }),
+              onClearNoc: () => setState(() {
+                _newNocBytes = null;
+                _newNocName = null;
+              }),
+              idType: _idType,
+              onIdTypeChanged: (v) => setState(() => _idType = v),
+              hasIdFront: _hasIdFront,
+              hasIdBack: _hasIdBack,
+              isIdFrontLocked: _idFrontLocked,
+              isIdBackLocked: _idBackLocked,
+              newIdFrontPicked: _newIdFrontBytes != null,
+              newIdFrontName: _newIdFrontName,
+              newIdBackPicked: _newIdBackBytes != null,
+              newIdBackName: _newIdBackName,
+              onPickIdFront: () => _pickDocument('idFront'),
+              onPickIdBack: () => _pickDocument('idBack'),
+              onClearIdFront: () => setState(() {
+                _newIdFrontBytes = null;
+                _newIdFrontName = null;
+              }),
+              onClearIdBack: () => setState(() {
+                _newIdBackBytes = null;
+                _newIdBackName = null;
+              }),
             ),
             const SizedBox(height: 20),
 
             // ── Property Details ─────────────────────────────
             _Section(title: 'Basic Info', children: [
               _Field(label: 'Property Name', ctrl: _nameCtrl),
-              _Field(label: 'Location',      ctrl: _locationCtrl),
+              _Field(label: 'Location', ctrl: _locationCtrl),
               _Field(label: 'Local Landmark (optional)', ctrl: _landmarkCtrl),
             ]),
             const SizedBox(height: 16),
 
-            if (_type == 'plot')  ...[..._plotFields(),  const SizedBox(height: 16)],
-            if (_type == 'pg')    ...[..._pgFields(),    const SizedBox(height: 16)],
-            if (_type == 'guest') ...[..._guestFields(), const SizedBox(height: 16)],
+            if (_type == 'plot') ...[
+              ..._plotFields(),
+              const SizedBox(height: 16)
+            ],
+            if (_type == 'pg') ...[..._pgFields(), const SizedBox(height: 16)],
+            if (_type == 'guest') ...[
+              ..._guestFields(),
+              const SizedBox(height: 16)
+            ],
 
             _Section(title: 'Description', children: [
-              _Field(label: 'Description (optional)', ctrl: _descCtrl, maxLines: 3),
+              _Field(
+                  label: 'Description (optional)',
+                  ctrl: _descCtrl,
+                  maxLines: 3),
             ]),
             const SizedBox(height: 16),
 
             _FacilitiesEditor(
               selected: _facilities,
               type: _type,
-              onChange: (v) => setState(() { _facilities..clear()..addAll(v); }),
+              onChange: (v) => setState(() {
+                _facilities
+                  ..clear()
+                  ..addAll(v);
+              }),
             ),
             const SizedBox(height: 32),
 
@@ -607,18 +707,24 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
               child: ElevatedButton(
                 onPressed: _saving ? null : _save,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _allComplete ? AppColors.primary : AppColors.error,
+                  backgroundColor:
+                      _allComplete ? AppColors.primary : AppColors.error,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
                 child: _saving
-                    ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                    ? const CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2)
                     : Text(
                         _allComplete
-                            ? (_isSuspendedOrRejected ? 'Save & Notify Admin' : 'Save Changes')
+                            ? (_isSuspendedOrRejected
+                                ? 'Save & Notify Admin'
+                                : 'Save Changes')
                             : 'Add missing uploads to save',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w700),
                       ),
               ),
             ),
@@ -630,91 +736,172 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   }
 
   List<Widget> _plotFields() => [
-    _Section(title: 'Plot Details', children: [
-      _Field(label: 'Plot ID (optional)', ctrl: _plotIdCtrl),
-      _DropdownField(label: 'Plot Type', value: _plotType,
-          options: const ['Agricultural','Residential','Commercial','Industrial'],
-          onChanged: (v) => setState(() => _plotType = v)),
-      _DropdownField(label: 'Facing', value: _facing,
-          options: const ['North','South','East','West','North-East','North-West','South-East','South-West'],
-          onChanged: (v) => setState(() => _facing = v)),
-      _Field(label: 'Plot Size (sq ft)', ctrl: _plotSizeCtrl, numeric: true),
-      Row(children: [
-        Expanded(child: _Field(label: 'Length (ft)', ctrl: _plotLengthCtrl, numeric: true)),
-        const SizedBox(width: 12),
-        Expanded(child: _Field(label: 'Width (ft)', ctrl: _plotWidthCtrl, numeric: true)),
-      ]),
-      _Field(label: 'Total Price (₹)', ctrl: _totalPriceCtrl, numeric: true),
-      _DropdownField(label: 'Ownership Type', value: _ownershipType,
-          options: const ['Freehold','Leasehold','Cooperative'],
-          onChanged: (v) => setState(() => _ownershipType = v)),
-    ]),
-  ];
+        _Section(title: 'Plot Details', children: [
+          _Field(label: 'Plot ID (optional)', ctrl: _plotIdCtrl),
+          _DropdownField(
+              label: 'Plot Type',
+              value: _plotType,
+              options: const [
+                'Agricultural',
+                'Residential',
+                'Commercial',
+                'Industrial'
+              ],
+              onChanged: (v) => setState(() => _plotType = v)),
+          _DropdownField(
+              label: 'Facing',
+              value: _facing,
+              options: const [
+                'North',
+                'South',
+                'East',
+                'West',
+                'North-East',
+                'North-West',
+                'South-East',
+                'South-West'
+              ],
+              onChanged: (v) => setState(() => _facing = v)),
+          _Field(
+              label: 'Plot Size (sq ft)', ctrl: _plotSizeCtrl, numeric: true),
+          Row(children: [
+            Expanded(
+                child: _Field(
+                    label: 'Length (ft)',
+                    ctrl: _plotLengthCtrl,
+                    numeric: true)),
+            const SizedBox(width: 12),
+            Expanded(
+                child: _Field(
+                    label: 'Width (ft)', ctrl: _plotWidthCtrl, numeric: true)),
+          ]),
+          _Field(
+              label: 'Total Price (₹)', ctrl: _totalPriceCtrl, numeric: true),
+          _DropdownField(
+              label: 'Ownership Type',
+              value: _ownershipType,
+              options: const ['Freehold', 'Leasehold', 'Cooperative'],
+              onChanged: (v) => setState(() => _ownershipType = v)),
+        ]),
+      ];
 
   List<Widget> _pgFields() => [
-    _Section(title: 'Room Details', children: [
-      Row(children: [
-        Expanded(child: _Field(label: 'Total Rooms', ctrl: _totalRoomsCtrl, numeric: true)),
-        const SizedBox(width: 12),
-        Expanded(child: _Field(label: 'AC Rooms', ctrl: _acRoomsCtrl, numeric: true)),
-        const SizedBox(width: 12),
-        Expanded(child: _Field(label: 'Non-AC', ctrl: _nonAcCtrl, numeric: true)),
-      ]),
-      _DropdownField(label: 'Occupancy Type', value: _occupancy,
-          options: const ['any','male','female'],
-          onChanged: (v) => setState(() => _occupancy = v ?? 'any')),
-      _DropdownField(label: 'Room Type', value: _roomType,
-          options: const ['sharing','private'],
-          onChanged: (v) => setState(() => _roomType = v ?? 'sharing')),
-    ]),
-    const SizedBox(height: 16),
-    _Section(title: 'Pricing', children: [
-      const _SubLabel('Single Room'),
-      Row(children: [
-        Expanded(child: _Field(label: 'Price/mo (₹)', ctrl: _singlePriceCtrl, numeric: true)),
-        const SizedBox(width: 12),
-        Expanded(child: _Field(label: 'Deposit (₹)', ctrl: _singleDepCtrl, numeric: true)),
-      ]),
-      const SizedBox(height: 4),
-      const _SubLabel('Double Room'),
-      Row(children: [
-        Expanded(child: _Field(label: 'Price/mo (₹)', ctrl: _doublePriceCtrl, numeric: true)),
-        const SizedBox(width: 12),
-        Expanded(child: _Field(label: 'Deposit (₹)', ctrl: _doubleDepCtrl, numeric: true)),
-      ]),
-      const SizedBox(height: 4),
-      _SwitchRow(label: 'Common Kitchen',  value: _commonKitchen,  onChanged: (v) => setState(() => _commonKitchen  = v)),
-      _SwitchRow(label: 'Private Kitchen', value: _privateKitchen, onChanged: (v) => setState(() => _privateKitchen = v)),
-    ]),
-  ];
+        _Section(title: 'Room Details', children: [
+          Row(children: [
+            Expanded(
+                child: _Field(
+                    label: 'Total Rooms',
+                    ctrl: _totalRoomsCtrl,
+                    numeric: true)),
+            const SizedBox(width: 12),
+            Expanded(
+                child: _Field(
+                    label: 'AC Rooms', ctrl: _acRoomsCtrl, numeric: true)),
+            const SizedBox(width: 12),
+            Expanded(
+                child:
+                    _Field(label: 'Non-AC', ctrl: _nonAcCtrl, numeric: true)),
+          ]),
+          _DropdownField(
+              label: 'Occupancy Type',
+              value: _occupancy,
+              options: const ['any', 'male', 'female'],
+              onChanged: (v) => setState(() => _occupancy = v ?? 'any')),
+          _DropdownField(
+              label: 'Room Type',
+              value: _roomType,
+              options: const ['sharing', 'private'],
+              onChanged: (v) => setState(() => _roomType = v ?? 'sharing')),
+        ]),
+        const SizedBox(height: 16),
+        _Section(title: 'Pricing', children: [
+          const _SubLabel('Single Room'),
+          Row(children: [
+            Expanded(
+                child: _Field(
+                    label: 'Price/mo (₹)',
+                    ctrl: _singlePriceCtrl,
+                    numeric: true)),
+            const SizedBox(width: 12),
+            Expanded(
+                child: _Field(
+                    label: 'Deposit (₹)', ctrl: _singleDepCtrl, numeric: true)),
+          ]),
+          const SizedBox(height: 4),
+          const _SubLabel('Double Room'),
+          Row(children: [
+            Expanded(
+                child: _Field(
+                    label: 'Price/mo (₹)',
+                    ctrl: _doublePriceCtrl,
+                    numeric: true)),
+            const SizedBox(width: 12),
+            Expanded(
+                child: _Field(
+                    label: 'Deposit (₹)', ctrl: _doubleDepCtrl, numeric: true)),
+          ]),
+          const SizedBox(height: 4),
+          _SwitchRow(
+              label: 'Common Kitchen',
+              value: _commonKitchen,
+              onChanged: (v) => setState(() => _commonKitchen = v)),
+          _SwitchRow(
+              label: 'Private Kitchen',
+              value: _privateKitchen,
+              onChanged: (v) => setState(() => _privateKitchen = v)),
+        ]),
+      ];
 
   List<Widget> _guestFields() => [
-    _Section(title: 'Room Details', children: [
-      Row(children: [
-        Expanded(child: _Field(label: 'Total Rooms', ctrl: _totalRoomsCtrl, numeric: true)),
-        const SizedBox(width: 12),
-        Expanded(child: _Field(label: 'AC Rooms', ctrl: _acRoomsCtrl, numeric: true)),
-        const SizedBox(width: 12),
-        Expanded(child: _Field(label: 'Non-AC', ctrl: _nonAcCtrl, numeric: true)),
-      ]),
-    ]),
-    const SizedBox(height: 16),
-    _Section(title: 'Pricing per Night', children: [
-      _PricingRow(label: 'Single Room', priceCtrl: _gSinglePriceCtrl, depCtrl: _gSingleDepCtrl),
-      const SizedBox(height: 10),
-      _PricingRow(label: 'Double Room', priceCtrl: _gDoublePriceCtrl, depCtrl: _gDoubleDepCtrl),
-      const SizedBox(height: 10),
-      _PricingRow(label: 'Family Room', priceCtrl: _gFamilyPriceCtrl, depCtrl: _gFamilyDepCtrl),
-      const SizedBox(height: 4),
-      _SwitchRow(label: 'Common Kitchen',  value: _commonKitchen,  onChanged: (v) => setState(() => _commonKitchen  = v)),
-      _SwitchRow(label: 'Private Kitchen', value: _privateKitchen, onChanged: (v) => setState(() => _privateKitchen = v)),
-    ]),
-  ];
+        _Section(title: 'Room Details', children: [
+          Row(children: [
+            Expanded(
+                child: _Field(
+                    label: 'Total Rooms',
+                    ctrl: _totalRoomsCtrl,
+                    numeric: true)),
+            const SizedBox(width: 12),
+            Expanded(
+                child: _Field(
+                    label: 'AC Rooms', ctrl: _acRoomsCtrl, numeric: true)),
+            const SizedBox(width: 12),
+            Expanded(
+                child:
+                    _Field(label: 'Non-AC', ctrl: _nonAcCtrl, numeric: true)),
+          ]),
+        ]),
+        const SizedBox(height: 16),
+        _Section(title: 'Pricing per Night', children: [
+          _PricingRow(
+              label: 'Single Room',
+              priceCtrl: _gSinglePriceCtrl,
+              depCtrl: _gSingleDepCtrl),
+          const SizedBox(height: 10),
+          _PricingRow(
+              label: 'Double Room',
+              priceCtrl: _gDoublePriceCtrl,
+              depCtrl: _gDoubleDepCtrl),
+          const SizedBox(height: 10),
+          _PricingRow(
+              label: 'Family Room',
+              priceCtrl: _gFamilyPriceCtrl,
+              depCtrl: _gFamilyDepCtrl),
+          const SizedBox(height: 4),
+          _SwitchRow(
+              label: 'Common Kitchen',
+              value: _commonKitchen,
+              onChanged: (v) => setState(() => _commonKitchen = v)),
+          _SwitchRow(
+              label: 'Private Kitchen',
+              value: _privateKitchen,
+              onChanged: (v) => setState(() => _privateKitchen = v)),
+        ]),
+      ];
 }
 
 // ── Photos Section ─────────────────────────────────────────────
 class _PhotosSection extends StatelessWidget {
-  final List<String>    existingPhotos;
+  final List<String> existingPhotos;
   final List<Uint8List> newPhotoBytes;
   final bool isLocked;
   final bool isSuspended;
@@ -749,26 +936,39 @@ class _PhotosSection extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Icon(
-            isLocked ? Icons.photo_library_rounded : Icons.add_photo_alternate_outlined,
-            color: isLocked ? AppColors.success : hasAny ? AppColors.primary : AppColors.error,
+            isLocked
+                ? Icons.photo_library_rounded
+                : Icons.add_photo_alternate_outlined,
+            color: isLocked
+                ? AppColors.success
+                : hasAny
+                    ? AppColors.primary
+                    : AppColors.error,
             size: 20,
           ),
           const SizedBox(width: 8),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(
-              'Property Photos',
-              style: TextStyle(
-                fontSize: 14, fontWeight: FontWeight.w700,
-                color: isLocked ? AppColors.textDark
-                    : hasAny ? AppColors.textDark : AppColors.error,
-              ),
-            ),
-            if (isSuspended && !isLocked)
-              const Text(
-                'Replace your photos to address admin concerns',
-                style: TextStyle(fontSize: 11, color: Color(0xFFE65100)),
-              ),
-          ])),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(
+                  'Property Photos',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: isLocked
+                        ? AppColors.textDark
+                        : hasAny
+                            ? AppColors.textDark
+                            : AppColors.error,
+                  ),
+                ),
+                if (isSuspended && !isLocked)
+                  const Text(
+                    'Replace your photos to address admin concerns',
+                    style: TextStyle(fontSize: 11, color: Color(0xFFE65100)),
+                  ),
+              ])),
           if (isLocked)
             _LockedBadge()
           else
@@ -777,13 +977,16 @@ class _PhotosSection extends StatelessWidget {
               icon: const Icon(Icons.add_rounded, size: 16),
               label: Text(
                 existingPhotos.isNotEmpty ? 'Add More' : 'Add Photos',
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                style:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               ),
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.primary,
                 backgroundColor: AppColors.primaryLight,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
               ),
             ),
         ]),
@@ -810,21 +1013,29 @@ class _PhotosSection extends StatelessWidget {
                     existingPhotos[i].startsWith('http')
                         ? existingPhotos[i]
                         : 'http://localhost:5000${existingPhotos[i]}',
-                    width: 80, height: 80, fit: BoxFit.cover,
+                    width: 80,
+                    height: 80,
+                    fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => Container(
-                      width: 80, height: 80,
-                      decoration: BoxDecoration(color: AppColors.primaryLight, borderRadius: BorderRadius.circular(8)),
-                      child: const Icon(Icons.broken_image_outlined, color: AppColors.textLight),
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                          color: AppColors.primaryLight,
+                          borderRadius: BorderRadius.circular(8)),
+                      child: const Icon(Icons.broken_image_outlined,
+                          color: AppColors.textLight),
                     ),
                   ),
                 ),
                 if (isLocked)
-                  Positioned.fill(child: Container(
+                  Positioned.fill(
+                      child: Container(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(8),
                       color: Colors.black.withValues(alpha: 0.22),
                     ),
-                    child: const Icon(Icons.lock_rounded, color: Colors.white, size: 18),
+                    child: const Icon(Icons.lock_rounded,
+                        color: Colors.white, size: 18),
                   )),
               ]),
             ),
@@ -836,7 +1047,10 @@ class _PhotosSection extends StatelessWidget {
           const SizedBox(height: 12),
           Row(children: [
             const Text('New photos to upload:',
-                style: TextStyle(fontSize: 12, color: AppColors.textMuted, fontWeight: FontWeight.w600)),
+                style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textMuted,
+                    fontWeight: FontWeight.w600)),
             if (isSuspended)
               const Padding(
                 padding: EdgeInsets.only(left: 6),
@@ -854,17 +1068,22 @@ class _PhotosSection extends StatelessWidget {
               itemBuilder: (_, i) => Stack(children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.memory(newPhotoBytes[i], width: 80, height: 80, fit: BoxFit.cover),
+                  child: Image.memory(newPhotoBytes[i],
+                      width: 80, height: 80, fit: BoxFit.cover),
                 ),
-                Positioned(top: -4, right: -4,
-                  child: GestureDetector(
-                    onTap: () => onRemoveNew(i),
-                    child: Container(
-                      padding: const EdgeInsets.all(3),
-                      decoration: const BoxDecoration(color: AppColors.error, shape: BoxShape.circle),
-                      child: const Icon(Icons.close, size: 12, color: Colors.white),
-                    ),
-                  )),
+                Positioned(
+                    top: -4,
+                    right: -4,
+                    child: GestureDetector(
+                      onTap: () => onRemoveNew(i),
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(
+                            color: AppColors.error, shape: BoxShape.circle),
+                        child: const Icon(Icons.close,
+                            size: 12, color: Colors.white),
+                      ),
+                    )),
               ]),
             ),
           ),
@@ -877,14 +1096,19 @@ class _PhotosSection extends StatelessWidget {
 class _LockedBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-    decoration: BoxDecoration(color: AppColors.successBg, borderRadius: BorderRadius.circular(6)),
-    child: const Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.lock_rounded, size: 11, color: AppColors.success),
-      SizedBox(width: 3),
-      Text('Uploaded', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.success)),
-    ]),
-  );
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+            color: AppColors.successBg, borderRadius: BorderRadius.circular(6)),
+        child: const Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.lock_rounded, size: 11, color: AppColors.success),
+          SizedBox(width: 3),
+          Text('Uploaded',
+              style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.success)),
+        ]),
+      );
 }
 
 // ── Documents Section ──────────────────────────────────────────
@@ -895,6 +1119,13 @@ class _DocumentsSection extends StatelessWidget {
   final bool newRegistryPicked, newNocPicked;
   final String? newRegistryName, newNocName;
   final VoidCallback onPickRegistry, onPickNoc, onClearRegistry, onClearNoc;
+  // ID proof
+  final String idType;
+  final ValueChanged<String> onIdTypeChanged;
+  final bool hasIdFront, hasIdBack, isIdFrontLocked, isIdBackLocked;
+  final bool newIdFrontPicked, newIdBackPicked;
+  final String? newIdFrontName, newIdBackName;
+  final VoidCallback onPickIdFront, onPickIdBack, onClearIdFront, onClearIdBack;
 
   const _DocumentsSection({
     required this.hasRegistry,
@@ -910,11 +1141,28 @@ class _DocumentsSection extends StatelessWidget {
     required this.onPickNoc,
     required this.onClearRegistry,
     required this.onClearNoc,
+    required this.idType,
+    required this.onIdTypeChanged,
+    required this.hasIdFront,
+    required this.hasIdBack,
+    required this.isIdFrontLocked,
+    required this.isIdBackLocked,
+    required this.newIdFrontPicked,
+    required this.newIdFrontName,
+    required this.newIdBackPicked,
+    required this.newIdBackName,
+    required this.onPickIdFront,
+    required this.onPickIdBack,
+    required this.onClearIdFront,
+    required this.onClearIdBack,
   });
 
   @override
   Widget build(BuildContext context) {
-    final allDone = hasRegistry && hasNoc;
+    final idLabel = idType == 'pan' ? 'PAN' : 'Aadhaar';
+    final idDone =
+        (hasIdFront || newIdFrontPicked) && (hasIdBack || newIdBackPicked);
+    final allDone = hasRegistry && hasNoc && idDone;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -930,40 +1178,101 @@ class _DocumentsSection extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Icon(Icons.description_outlined,
-              color: allDone && !isSuspended ? AppColors.success : AppColors.error, size: 20),
+              color:
+                  allDone && !isSuspended ? AppColors.success : AppColors.error,
+              size: 20),
           const SizedBox(width: 8),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Legal Documents',
-                style: TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w700,
-                    color: allDone && !isSuspended ? AppColors.textDark : AppColors.error)),
-            if (isSuspended)
-              const Text('You can update these documents',
-                  style: TextStyle(fontSize: 11, color: Color(0xFFE65100))),
-          ])),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text('Legal Documents',
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: allDone && !isSuspended
+                            ? AppColors.textDark
+                            : AppColors.error)),
+                if (isSuspended)
+                  const Text('You can update these documents',
+                      style: TextStyle(fontSize: 11, color: Color(0xFFE65100))),
+              ])),
         ]),
         const SizedBox(height: 14),
 
         _DocRow(
-          label:            'Registry / Ownership Document',
-          isUploaded:       hasRegistry,
-          isLocked:         isRegistryLocked,
-          isPicked:         newRegistryPicked,
-          pickedName:       newRegistryName,
-          isSuspended:      isSuspended,
-          onPick:           onPickRegistry,
-          onClear:          onClearRegistry,
+          label: 'Registry / Ownership Document',
+          isUploaded: hasRegistry,
+          isLocked: isRegistryLocked,
+          isPicked: newRegistryPicked,
+          pickedName: newRegistryName,
+          isSuspended: isSuspended,
+          onPick: onPickRegistry,
+          onClear: onClearRegistry,
         ),
         const SizedBox(height: 10),
         _DocRow(
-          label:            'NOC Document',
-          isUploaded:       hasNoc,
-          isLocked:         isNocLocked,
-          isPicked:         newNocPicked,
-          pickedName:       newNocName,
-          isSuspended:      isSuspended,
-          onPick:           onPickNoc,
-          onClear:          onClearNoc,
+          label: 'NOC Document',
+          isUploaded: hasNoc,
+          isLocked: isNocLocked,
+          isPicked: newNocPicked,
+          pickedName: newNocName,
+          isSuspended: isSuspended,
+          onPick: onPickNoc,
+          onClear: onClearNoc,
+        ),
+
+        // ── Owner ID Proof (Aadhaar / PAN) ─────────────────────
+        const SizedBox(height: 18),
+        const Divider(height: 1),
+        const SizedBox(height: 14),
+        Row(children: [
+          Icon(idDone ? Icons.verified_user : Icons.badge_outlined,
+              color: idDone ? AppColors.success : AppColors.error, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+              child: Text('Owner ID Proof',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: idDone ? AppColors.textDark : AppColors.error))),
+        ]),
+        const SizedBox(height: 4),
+        const Text('Upload front & back of one ID — Aadhaar or PAN card.',
+            style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+        const SizedBox(height: 10),
+        Row(children: [
+          _IdTypeChip(
+              label: 'Aadhaar Card',
+              selected: idType == 'aadhaar',
+              onTap: () => onIdTypeChanged('aadhaar')),
+          const SizedBox(width: 8),
+          _IdTypeChip(
+              label: 'PAN Card',
+              selected: idType == 'pan',
+              onTap: () => onIdTypeChanged('pan')),
+        ]),
+        const SizedBox(height: 10),
+        _DocRow(
+          label: '$idLabel — Front',
+          isUploaded: hasIdFront,
+          isLocked: isIdFrontLocked,
+          isPicked: newIdFrontPicked,
+          pickedName: newIdFrontName,
+          isSuspended: isSuspended,
+          onPick: onPickIdFront,
+          onClear: onClearIdFront,
+        ),
+        const SizedBox(height: 10),
+        _DocRow(
+          label: '$idLabel — Back',
+          isUploaded: hasIdBack,
+          isLocked: isIdBackLocked,
+          isPicked: newIdBackPicked,
+          pickedName: newIdBackName,
+          isSuspended: isSuspended,
+          onPick: onPickIdBack,
+          onClear: onClearIdBack,
         ),
       ]),
     );
@@ -972,23 +1281,33 @@ class _DocumentsSection extends StatelessWidget {
 
 class _DocRow extends StatelessWidget {
   final String label;
-  final bool   isUploaded, isLocked, isPicked, isSuspended;
+  final bool isUploaded, isLocked, isPicked, isSuspended;
   final String? pickedName;
   final VoidCallback onPick, onClear;
 
   const _DocRow({
-    required this.label, required this.isUploaded, required this.isLocked,
-    required this.isPicked, required this.pickedName, required this.isSuspended,
-    required this.onPick, required this.onClear,
+    required this.label,
+    required this.isUploaded,
+    required this.isLocked,
+    required this.isPicked,
+    required this.pickedName,
+    required this.isSuspended,
+    required this.onPick,
+    required this.onClear,
   });
 
   @override
   Widget build(BuildContext context) {
     Color bg;
-    if (isLocked)       { bg = AppColors.successBg; }
-    else if (isPicked)  { bg = AppColors.primaryLight; }
-    else if (isSuspended && isUploaded) { bg = const Color(0xFFFFF3E0); }
-    else                { bg = AppColors.background; }
+    if (isLocked) {
+      bg = AppColors.successBg;
+    } else if (isPicked) {
+      bg = AppColors.primaryLight;
+    } else if (isSuspended && isUploaded) {
+      bg = const Color(0xFFFFF3E0);
+    } else {
+      bg = AppColors.background;
+    }
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -1024,16 +1343,22 @@ class _DocRow extends StatelessWidget {
           size: 22,
         ),
         const SizedBox(width: 10),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(label,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textDark)),
+              style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textDark)),
           if (isLocked)
             const Text('✅ Uploaded — cannot be changed',
                 style: TextStyle(fontSize: 11, color: AppColors.success))
           else if (isPicked)
             Text(pickedName ?? 'File selected',
                 style: const TextStyle(fontSize: 11, color: AppColors.primary),
-                maxLines: 1, overflow: TextOverflow.ellipsis)
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis)
           else if (isSuspended && isUploaded)
             const Text('Previously uploaded — tap to replace',
                 style: TextStyle(fontSize: 11, color: Color(0xFFE65100)))
@@ -1045,17 +1370,19 @@ class _DocRow extends StatelessWidget {
           const Icon(Icons.lock_rounded, color: AppColors.success, size: 18)
         else if (isPicked)
           GestureDetector(
-            onTap: onClear,
-            child: const Icon(Icons.close, color: AppColors.error, size: 18))
+              onTap: onClear,
+              child: const Icon(Icons.close, color: AppColors.error, size: 18))
         else
           TextButton(
             onPressed: onPick,
             style: TextButton.styleFrom(
               backgroundColor: isSuspended && isUploaded
-                  ? const Color(0xFFE65100) : AppColors.primary,
+                  ? const Color(0xFFE65100)
+                  : AppColors.primary,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
@@ -1065,6 +1392,38 @@ class _DocRow extends StatelessWidget {
             ),
           ),
       ]),
+    );
+  }
+}
+
+// ── ID type selector chip ──────────────────────────────────────
+class _IdTypeChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _IdTypeChip(
+      {required this.label, required this.selected, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? AppColors.primary : AppColors.background,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+                color: selected ? AppColors.primary : AppColors.border),
+          ),
+          child: Text(label,
+              style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? Colors.white : AppColors.textDark)),
+        ),
+      ),
     );
   }
 }
@@ -1079,16 +1438,23 @@ class _Section extends StatelessWidget {
     final spaced = <Widget>[];
     for (int i = 0; i < children.length; i++) {
       spaced.add(children[i]);
-      if (i < children.length - 1) { spaced.add(const SizedBox(height: 10)); }
+      if (i < children.length - 1) {
+        spaced.add(const SizedBox(height: 10));
+      }
     }
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white, borderRadius: BorderRadius.circular(14),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.border),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textDark)),
+        Text(title,
+            style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textDark)),
         const SizedBox(height: 14),
         ...spaced,
       ]),
@@ -1101,9 +1467,13 @@ class _SubLabel extends StatelessWidget {
   const _SubLabel(this.text);
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 6),
-    child: Text(text, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
-  );
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(text,
+            style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textMuted)),
+      );
 }
 
 class _Field extends StatelessWidget {
@@ -1111,24 +1481,35 @@ class _Field extends StatelessWidget {
   final TextEditingController ctrl;
   final bool numeric;
   final int maxLines;
-  const _Field({required this.label, required this.ctrl, this.numeric = false, this.maxLines = 1});
+  const _Field(
+      {required this.label,
+      required this.ctrl,
+      this.numeric = false,
+      this.maxLines = 1});
   @override
   Widget build(BuildContext context) => TextField(
-    controller: ctrl, maxLines: maxLines,
-    keyboardType: numeric ? TextInputType.number : TextInputType.text,
-    decoration: InputDecoration(
-      labelText: label,
-      labelStyle: const TextStyle(fontSize: 13, color: AppColors.textMuted),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppColors.border)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppColors.border)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      filled: true, fillColor: AppColors.background,
-    ),
-  );
+        controller: ctrl,
+        maxLines: maxLines,
+        keyboardType: numeric ? TextInputType.number : TextInputType.text,
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: AppColors.border)),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: AppColors.border)),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide:
+                  const BorderSide(color: AppColors.primary, width: 1.5)),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          filled: true,
+          fillColor: AppColors.background,
+        ),
+      );
 }
 
 class _DropdownField extends StatelessWidget {
@@ -1136,97 +1517,165 @@ class _DropdownField extends StatelessWidget {
   final String? value;
   final List<String> options;
   final void Function(String?) onChanged;
-  const _DropdownField({required this.label, required this.value, required this.options, required this.onChanged});
+  const _DropdownField(
+      {required this.label,
+      required this.value,
+      required this.options,
+      required this.onChanged});
   @override
   Widget build(BuildContext context) => DropdownButtonFormField<String>(
-    value: options.contains(value) ? value : null,
-    decoration: InputDecoration(
-      labelText: label,
-      labelStyle: const TextStyle(fontSize: 13, color: AppColors.textMuted),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.border)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.border)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      filled: true, fillColor: AppColors.background,
-    ),
-    items: options.map((o) => DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(fontSize: 14)))).toList(),
-    onChanged: onChanged,
-  );
+        value: options.contains(value) ? value : null,
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: AppColors.border)),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: AppColors.border)),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide:
+                  const BorderSide(color: AppColors.primary, width: 1.5)),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          filled: true,
+          fillColor: AppColors.background,
+        ),
+        items: options
+            .map((o) => DropdownMenuItem(
+                value: o, child: Text(o, style: const TextStyle(fontSize: 14))))
+            .toList(),
+        onChanged: onChanged,
+      );
 }
 
 class _SwitchRow extends StatelessWidget {
   final String label;
   final bool value;
   final void Function(bool) onChanged;
-  const _SwitchRow({required this.label, required this.value, required this.onChanged});
+  const _SwitchRow(
+      {required this.label, required this.value, required this.onChanged});
   @override
   Widget build(BuildContext context) => Row(
-    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-    children: [
-      Text(label, style: const TextStyle(fontSize: 14, color: AppColors.textDark)),
-      Switch(value: value, onChanged: onChanged, activeTrackColor: AppColors.primary, thumbColor: WidgetStateProperty.all(Colors.white)),
-    ],
-  );
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style: const TextStyle(fontSize: 14, color: AppColors.textDark)),
+          Switch(
+              value: value,
+              onChanged: onChanged,
+              activeTrackColor: AppColors.primary,
+              thumbColor: WidgetStateProperty.all(Colors.white)),
+        ],
+      );
 }
 
 class _PricingRow extends StatelessWidget {
   final String label;
   final TextEditingController priceCtrl, depCtrl;
-  const _PricingRow({required this.label, required this.priceCtrl, required this.depCtrl});
+  const _PricingRow(
+      {required this.label, required this.priceCtrl, required this.depCtrl});
   @override
-  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
-    const SizedBox(height: 8),
-    Row(children: [
-      Expanded(child: _Field(label: 'Price (₹)', ctrl: priceCtrl, numeric: true)),
-      const SizedBox(width: 12),
-      Expanded(child: _Field(label: 'Deposit (₹)', ctrl: depCtrl, numeric: true)),
-    ]),
-  ]);
+  Widget build(BuildContext context) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label,
+            style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textMuted)),
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(
+              child:
+                  _Field(label: 'Price (₹)', ctrl: priceCtrl, numeric: true)),
+          const SizedBox(width: 12),
+          Expanded(
+              child:
+                  _Field(label: 'Deposit (₹)', ctrl: depCtrl, numeric: true)),
+        ]),
+      ]);
 }
 
 class _FacilitiesEditor extends StatelessWidget {
   final List<String> selected;
   final String type;
   final void Function(List<String>) onChange;
-  const _FacilitiesEditor({required this.selected, required this.type, required this.onChange});
+  const _FacilitiesEditor(
+      {required this.selected, required this.type, required this.onChange});
   @override
   Widget build(BuildContext context) {
     final all = type == 'plot'
-        ? ['Road Access','Water Supply','Electricity','Sewage','Boundary Wall','Gated Community','Parking']
-        : ['WiFi','Parking','AC','Laundry','CCTV','Security','Power Backup','Water Supply','Gym','Common Room'];
+        ? [
+            'Road Access',
+            'Water Supply',
+            'Electricity',
+            'Sewage',
+            'Boundary Wall',
+            'Gated Community',
+            'Parking'
+          ]
+        : [
+            'WiFi',
+            'Parking',
+            'AC',
+            'Laundry',
+            'CCTV',
+            'Security',
+            'Power Backup',
+            'Water Supply',
+            'Gym',
+            'Common Room'
+          ];
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white, borderRadius: BorderRadius.circular(14),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.border),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Facilities', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textDark)),
+        const Text('Facilities',
+            style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textDark)),
         const SizedBox(height: 12),
-        Wrap(spacing: 8, runSpacing: 8, children: all.map((f) {
-          final on = selected.contains(f);
-          return GestureDetector(
-            onTap: () {
-              final updated = List<String>.from(selected);
-              if (on) { updated.remove(f); } else { updated.add(f); }
-              onChange(updated);
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-              decoration: BoxDecoration(
-                color: on ? AppColors.primary : AppColors.background,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: on ? AppColors.primary : AppColors.border),
-              ),
-              child: Text(f, style: TextStyle(
-                fontSize: 12, fontWeight: FontWeight.w600,
-                color: on ? Colors.white : AppColors.textDark,
-              )),
-            ),
-          );
-        }).toList()),
+        Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: all.map((f) {
+              final on = selected.contains(f);
+              return GestureDetector(
+                onTap: () {
+                  final updated = List<String>.from(selected);
+                  if (on) {
+                    updated.remove(f);
+                  } else {
+                    updated.add(f);
+                  }
+                  onChange(updated);
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: on ? AppColors.primary : AppColors.background,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: on ? AppColors.primary : AppColors.border),
+                  ),
+                  child: Text(f,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: on ? Colors.white : AppColors.textDark,
+                      )),
+                ),
+              );
+            }).toList()),
       ]),
     );
   }

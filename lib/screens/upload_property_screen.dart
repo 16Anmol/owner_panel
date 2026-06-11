@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 
@@ -31,11 +32,18 @@ class _UploadPropertyScreenState extends State<UploadPropertyScreen> {
   String? _registryName;
   Uint8List? _nocBytes;
   String? _nocName;
+  // ID proof (Aadhaar or PAN) — front + back
+  String _idType = 'aadhaar'; // 'aadhaar' | 'pan'
+  Uint8List? _idFrontBytes;
+  String? _idFrontName;
+  Uint8List? _idBackBytes;
+  String? _idBackName;
 
   // ── Common fields ─────────────────────────────────────────────
   final _nameCtrl = TextEditingController();
   final _locationCtrl = TextEditingController();
   final _landmarkCtrl = TextEditingController();
+  final _mapLinkCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   final List<String> _facilities = [];
 
@@ -71,8 +79,9 @@ class _UploadPropertyScreenState extends State<UploadPropertyScreen> {
   bool get _photosComplete => _photoBytes.isNotEmpty;
   bool get _registryComplete => _registryBytes != null;
   bool get _nocComplete => _nocBytes != null;
+  bool get _idComplete => _idFrontBytes != null && _idBackBytes != null;
   bool get _mediaComplete =>
-      _photosComplete && _registryComplete && _nocComplete;
+      _photosComplete && _registryComplete && _nocComplete && _idComplete;
 
   @override
   void dispose() {
@@ -81,6 +90,7 @@ class _UploadPropertyScreenState extends State<UploadPropertyScreen> {
       _locationCtrl,
       _landmarkCtrl,
       _descCtrl,
+      _mapLinkCtrl,
       _plotIdCtrl,
       _plotSizeCtrl,
       _plotLengthCtrl,
@@ -103,6 +113,16 @@ class _UploadPropertyScreenState extends State<UploadPropertyScreen> {
       c.dispose();
     }
     super.dispose();
+  }
+
+  // Opens Google Maps (searching the typed location) so the owner can find the
+  // exact spot, then Share → Copy link, and paste it into the Maps link field.
+  Future<void> _openMapsToCopyLink() async {
+    final q = _locationCtrl.text.trim();
+    final url = q.isEmpty
+        ? 'https://www.google.com/maps'
+        : 'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(q)}';
+    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 
   // ── Pick photos (image_picker — works on web + mobile) ────────
@@ -138,9 +158,15 @@ class _UploadPropertyScreenState extends State<UploadPropertyScreen> {
           if (docType == 'registry') {
             _registryBytes = bytes;
             _registryName = xf.name;
-          } else {
+          } else if (docType == 'noc') {
             _nocBytes = bytes;
             _nocName = xf.name;
+          } else if (docType == 'idFront') {
+            _idFrontBytes = bytes;
+            _idFrontName = xf.name;
+          } else if (docType == 'idBack') {
+            _idBackBytes = bytes;
+            _idBackName = xf.name;
           }
         });
       }
@@ -229,6 +255,7 @@ class _UploadPropertyScreenState extends State<UploadPropertyScreen> {
         propertyName: _nameCtrl.text.trim(),
         location: _locationCtrl.text.trim(),
         localLandmark: _landmarkCtrl.text.trim(),
+        mapLink: _mapLinkCtrl.text.trim(),
         details: _buildDetails(),
       );
 
@@ -254,6 +281,11 @@ class _UploadPropertyScreenState extends State<UploadPropertyScreen> {
         registryFileName: _registryName,
         nocBytes: _nocBytes,
         nocFileName: _nocName,
+        idType: _idType,
+        idFrontBytes: _idFrontBytes,
+        idFrontFileName: _idFrontName,
+        idBackBytes: _idBackBytes,
+        idBackFileName: _idBackName,
       );
 
       if (mounted) {
@@ -341,6 +373,10 @@ class _UploadPropertyScreenState extends State<UploadPropertyScreen> {
                         const Text('• NOC document',
                             style: TextStyle(
                                 fontSize: 12, color: Color(0xFFBF360C))),
+                      if (!_idComplete)
+                        const Text('• ID proof (Aadhaar/PAN) — front & back',
+                            style: TextStyle(
+                                fontSize: 12, color: Color(0xFFBF360C))),
                     ]),
               ),
               const SizedBox(height: 16),
@@ -373,6 +409,22 @@ class _UploadPropertyScreenState extends State<UploadPropertyScreen> {
                 _nocBytes = null;
                 _nocName = null;
               }),
+              idType: _idType,
+              onIdTypeChanged: (v) => setState(() => _idType = v),
+              idFrontPicked: _idFrontBytes != null,
+              idFrontName: _idFrontName,
+              idBackPicked: _idBackBytes != null,
+              idBackName: _idBackName,
+              onPickIdFront: () => _pickDocument('idFront'),
+              onPickIdBack: () => _pickDocument('idBack'),
+              onClearIdFront: () => setState(() {
+                _idFrontBytes = null;
+                _idFrontName = null;
+              }),
+              onClearIdBack: () => setState(() {
+                _idBackBytes = null;
+                _idBackName = null;
+              }),
             ),
             const SizedBox(height: 20),
 
@@ -381,6 +433,25 @@ class _UploadPropertyScreenState extends State<UploadPropertyScreen> {
               _Field(label: 'Property Name', ctrl: _nameCtrl),
               _Field(label: 'Location', ctrl: _locationCtrl),
               _Field(label: 'Local Landmark (optional)', ctrl: _landmarkCtrl),
+              _Field(label: 'Google Maps link (optional)', ctrl: _mapLinkCtrl),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _openMapsToCopyLink,
+                  icon: const Icon(Icons.map_outlined, size: 18),
+                  label: const Text('Find on Google Maps & copy link'),
+                  style:
+                      TextButton.styleFrom(foregroundColor: AppColors.primary),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(left: 4, bottom: 4),
+                child: Text(
+                  'Tip: open Google Maps, find the exact spot, tap Share → Copy link, '
+                  'and paste it above. Customers can tap it to open the location.',
+                  style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+                ),
+              ),
             ]),
             const SizedBox(height: 16),
 
@@ -768,6 +839,11 @@ class _DocumentsSection extends StatelessWidget {
   final bool registryPicked, nocPicked;
   final String? registryName, nocName;
   final VoidCallback onPickRegistry, onPickNoc, onClearRegistry, onClearNoc;
+  final String idType;
+  final ValueChanged<String> onIdTypeChanged;
+  final bool idFrontPicked, idBackPicked;
+  final String? idFrontName, idBackName;
+  final VoidCallback onPickIdFront, onPickIdBack, onClearIdFront, onClearIdBack;
   const _DocumentsSection({
     required this.registryPicked,
     required this.registryName,
@@ -777,11 +853,23 @@ class _DocumentsSection extends StatelessWidget {
     required this.onPickNoc,
     required this.onClearRegistry,
     required this.onClearNoc,
+    required this.idType,
+    required this.onIdTypeChanged,
+    required this.idFrontPicked,
+    required this.idFrontName,
+    required this.idBackPicked,
+    required this.idBackName,
+    required this.onPickIdFront,
+    required this.onPickIdBack,
+    required this.onClearIdFront,
+    required this.onClearIdBack,
   });
 
   @override
   Widget build(BuildContext context) {
-    final allDone = registryPicked && nocPicked;
+    final idDone = idFrontPicked && idBackPicked;
+    final allDone = registryPicked && nocPicked && idDone;
+    final idLabel = idType == 'pan' ? 'PAN' : 'Aadhaar';
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -821,7 +909,94 @@ class _DocumentsSection extends StatelessWidget {
           onPick: onPickNoc,
           onClear: onClearNoc,
         ),
+
+        // ── ID Proof (Aadhaar / PAN) ───────────────────────────
+        const SizedBox(height: 18),
+        const Divider(height: 1),
+        const SizedBox(height: 14),
+        Row(children: [
+          Icon(idDone ? Icons.verified_user : Icons.badge_outlined,
+              color: idDone ? AppColors.success : AppColors.error, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+              child: Text('Owner ID Proof',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: idDone ? AppColors.textDark : AppColors.error))),
+        ]),
+        const SizedBox(height: 4),
+        const Text('Upload front & back of one ID — Aadhaar or PAN card.',
+            style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+        const SizedBox(height: 10),
+        // type toggle
+        Row(children: [
+          _IdTypeChip(
+              label: 'Aadhaar Card',
+              value: 'aadhaar',
+              selected: idType == 'aadhaar',
+              onTap: () => onIdTypeChanged('aadhaar')),
+          const SizedBox(width: 8),
+          _IdTypeChip(
+              label: 'PAN Card',
+              value: 'pan',
+              selected: idType == 'pan',
+              onTap: () => onIdTypeChanged('pan')),
+        ]),
+        const SizedBox(height: 10),
+        _DocRow(
+          label: '$idLabel — Front',
+          isPicked: idFrontPicked,
+          pickedName: idFrontName,
+          onPick: onPickIdFront,
+          onClear: onClearIdFront,
+        ),
+        const SizedBox(height: 10),
+        _DocRow(
+          label: '$idLabel — Back',
+          isPicked: idBackPicked,
+          pickedName: idBackName,
+          onPick: onPickIdBack,
+          onClear: onClearIdBack,
+        ),
       ]),
+    );
+  }
+}
+
+// ── ID type selector chip ────────────────────────────────────────
+class _IdTypeChip extends StatelessWidget {
+  final String label, value;
+  final bool selected;
+  final VoidCallback onTap;
+  const _IdTypeChip({
+    required this.label,
+    required this.value,
+    required this.selected,
+    required this.onTap,
+  });
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? AppColors.primary : AppColors.background,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected ? AppColors.primary : AppColors.border,
+            ),
+          ),
+          child: Text(label,
+              style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? Colors.white : AppColors.textDark)),
+        ),
+      ),
     );
   }
 }
