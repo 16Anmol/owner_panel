@@ -8,26 +8,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ApiService {
   // Pass --dart-define=API_BASE_URL=http://<pc-lan-ip>:5000/api when testing
   // on a real phone, or your Render https URL once deployed.
-  // ════════════════════════════════════════════════════════════════
-  //  >>> SET YOUR BACKEND URL HERE before building the release APK <<<
-  //  Must END WITH /api, e.g.  https://lexnland-backend.onrender.com/api
-  //  Leave localhost for your own emulator/web testing.
-  //  You can also override without editing:
-  //    flutter build apk --release --dart-define=API_BASE_URL=https://.../api
-  // ════════════════════════════════════════════════════════════════
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:5000/api',
+    defaultValue: 'https://owner-panel-backend.onrender.com/api',
   );
-
-  /// Backend origin without the trailing "/api". Used to turn relative media
-  /// paths from the server (e.g. "/uploads/photos/x.jpg") into full URLs.
-  static String get mediaBase {
-    var b = baseUrl;
-    if (b.endsWith('/')) b = b.substring(0, b.length - 1);
-    if (b.endsWith('/api')) b = b.substring(0, b.length - 4);
-    return b;
-  }
 
   static Future<String?> getToken() async {
     final p = await SharedPreferences.getInstance();
@@ -661,7 +645,7 @@ class ApiService {
         'POST', Uri.parse('$baseUrl/auth/upload-aadhaar'));
     if (token != null) request.headers['Authorization'] = 'Bearer $token';
 
-    String _mime(String name) {
+    String mime(String name) {
       final ext = name.split('.').last.toLowerCase();
       return ext == 'pdf'
           ? 'application/pdf'
@@ -674,13 +658,13 @@ class ApiService {
       'aadhaarFront',
       frontBytes,
       filename: frontName,
-      contentType: MediaType.parse(_mime(frontName)),
+      contentType: MediaType.parse(mime(frontName)),
     ));
     request.files.add(http.MultipartFile.fromBytes(
       'aadhaarBack',
       backBytes,
       filename: backName,
-      contentType: MediaType.parse(_mime(backName)),
+      contentType: MediaType.parse(mime(backName)),
     ));
 
     final streamed = await request.send();
