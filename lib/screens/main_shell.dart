@@ -59,17 +59,20 @@ class _BottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = [
-      _NavItem(icon: Icons.home_rounded,      label: 'Home'),
-      _NavItem(icon: Icons.list_alt_rounded,  label: 'Listing'),
+      _NavItem(icon: Icons.home_rounded, label: 'Home'),
+      _NavItem(icon: Icons.list_alt_rounded, label: 'Listing'),
       _NavItem(icon: Icons.bar_chart_rounded, label: 'Dashboard'),
-      _NavItem(icon: Icons.person_rounded,    label: 'Profile'),
+      _NavItem(icon: Icons.person_rounded, label: 'Profile'),
     ];
 
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: AppColors.border)),
-        boxShadow: [BoxShadow(color: Color(0x0A000000), blurRadius: 12, offset: Offset(0, -2))],
+        boxShadow: [
+          BoxShadow(
+              color: Color(0x0A000000), blurRadius: 12, offset: Offset(0, -2))
+        ],
       ),
       child: SafeArea(
         top: false,
@@ -78,7 +81,7 @@ class _BottomBar extends StatelessWidget {
           child: Row(
             children: List.generate(items.length, (i) {
               final active = i == currentIndex;
-              final color  = active ? AppColors.primary : AppColors.textLight;
+              final color = active ? AppColors.primary : AppColors.textLight;
               return Expanded(
                 child: InkWell(
                   onTap: () => onTap(i),
@@ -87,16 +90,22 @@ class _BottomBar extends StatelessWidget {
                     children: [
                       AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 4),
                         decoration: BoxDecoration(
-                          color: active ? AppColors.primaryLight : Colors.transparent,
+                          color: active
+                              ? AppColors.primaryLight
+                              : Colors.transparent,
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Icon(items[i].icon, size: 22, color: color),
                       ),
                       const SizedBox(height: 2),
                       Text(items[i].label,
-                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: color)),
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: color)),
                     ],
                   ),
                 ),

@@ -70,10 +70,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final missing = <String>[];
     if (_nameCtrl.text.trim().isEmpty) missing.add('Name');
     if (_gender.isEmpty) missing.add('Gender');
-    if (_occupationCtrl.text.trim().isEmpty)
+    if (_occupationCtrl.text.trim().isEmpty) {
       missing.add('Occupation / Business type');
-    if (_businessCtrl.text.trim().isEmpty)
+    }
+    if (_businessCtrl.text.trim().isEmpty) {
       missing.add('Business / Individual name');
+    }
     if (_addressCtrl.text.trim().isEmpty) missing.add('Address');
     if (_cityCtrl.text.trim().isEmpty) missing.add('City');
     if (_stateCtrl.text.trim().isEmpty) missing.add('State');

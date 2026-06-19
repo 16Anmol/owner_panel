@@ -1,9 +1,8 @@
 import 'dart:typed_data';
-// ignore: avoid_web_libraries_in_flutter, deprecated_member_use
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
+import '../services/platform/file_picker_helper.dart';
 
 /// Edit screen for PG, Guest Room, and Plot properties.
 ///
@@ -42,14 +41,6 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   String? _newRegistryName;
   Uint8List? _newNocBytes;
   String? _newNocName;
-  // ID proof (Aadhaar / PAN) — front + back
-  late bool _hasIdFront;
-  late bool _hasIdBack;
-  String _idType = 'aadhaar'; // 'aadhaar' | 'pan'
-  Uint8List? _newIdFrontBytes;
-  String? _newIdFrontName;
-  Uint8List? _newIdBackBytes;
-  String? _newIdBackName;
   // ignore: unused_field
   bool _replacePhotos = false;
 
@@ -97,19 +88,13 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
       !_isSuspendedOrRejected && _existingPhotos.isNotEmpty;
   bool get _registryLocked => !_isSuspendedOrRejected && _hasRegistry;
   bool get _nocLocked => !_isSuspendedOrRejected && _hasNoc;
-  bool get _idFrontLocked => !_isSuspendedOrRejected && _hasIdFront;
-  bool get _idBackLocked => !_isSuspendedOrRejected && _hasIdBack;
 
   // ── completion check ──
   bool get _photosComplete =>
       _existingPhotos.isNotEmpty || _newPhotoBytes.isNotEmpty;
   bool get _registryComplete => _hasRegistry || _newRegistryBytes != null;
   bool get _nocComplete => _hasNoc || _newNocBytes != null;
-  bool get _idFrontComplete => _hasIdFront || _newIdFrontBytes != null;
-  bool get _idBackComplete => _hasIdBack || _newIdBackBytes != null;
-  bool get _idComplete => _idFrontComplete && _idBackComplete;
-  bool get _allComplete =>
-      _photosComplete && _registryComplete && _nocComplete && _idComplete;
+  bool get _allComplete => _photosComplete && _registryComplete && _nocComplete;
 
   @override
   void initState() {
@@ -122,10 +107,6 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     _existingPhotos = List<String>.from(p['photos'] as List? ?? []);
     _hasRegistry = (p['registryDocument'] as String?)?.isNotEmpty == true;
     _hasNoc = (p['nocDocument'] as String?)?.isNotEmpty == true;
-    _hasIdFront = (p['idProofFront'] as String?)?.isNotEmpty == true;
-    _hasIdBack = (p['idProofBack'] as String?)?.isNotEmpty == true;
-    final idT = (p['idProofType'] as String?) ?? '';
-    _idType = (idT == 'pan' || idT == 'aadhaar') ? idT : 'aadhaar';
 
     _nameCtrl.text = p['propertyName'] ?? '';
     _locationCtrl.text = p['location'] ?? '';
@@ -224,61 +205,36 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     super.dispose();
   }
 
-  // ── Pick photos (image_picker — works on web + mobile) ───────
+  // ── Pick photos ───────────────────────────────────────────────
   Future<void> _pickPhotos() async {
-    try {
-      final picker = ImagePicker();
-      final picked = await picker.pickMultiImage(imageQuality: 80);
-      if (picked.isEmpty) return;
-      for (final xf in picked) {
-        final bytes = await xf.readAsBytes();
-        if (mounted) {
-          setState(() {
-            _newPhotoBytes.add(bytes);
-            _newPhotoNames.add(xf.name);
-            if (_isSuspendedOrRejected) _replacePhotos = true;
-          });
+    final picked = await pickImages(multiple: true);
+    if (picked.isEmpty) return;
+    if (mounted) {
+      setState(() {
+        for (final f in picked) {
+          _newPhotoBytes.add(f.bytes);
+          _newPhotoNames.add(f.name);
         }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Could not pick photos: $e'),
-            backgroundColor: AppColors.error));
-      }
+        if (_isSuspendedOrRejected) _replacePhotos = true;
+      });
     }
   }
 
-  // ── Pick a document (registry / noc / idFront / idBack) ───────
+  // ── Pick a document ───────────────────────────────────────────
   Future<void> _pickDocument(String docType) async {
-    try {
-      final picker = ImagePicker();
-      final xf =
-          await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
-      if (xf == null) return;
-      final bytes = await xf.readAsBytes();
-      if (!mounted) return;
+    // Web: images + PDF. Mobile: images only (image_picker has no PDF).
+    final picked = await pickDocument();
+    if (picked == null) return;
+    if (mounted) {
       setState(() {
         if (docType == 'registry') {
-          _newRegistryBytes = bytes;
-          _newRegistryName = xf.name;
-        } else if (docType == 'noc') {
-          _newNocBytes = bytes;
-          _newNocName = xf.name;
-        } else if (docType == 'idFront') {
-          _newIdFrontBytes = bytes;
-          _newIdFrontName = xf.name;
-        } else if (docType == 'idBack') {
-          _newIdBackBytes = bytes;
-          _newIdBackName = xf.name;
+          _newRegistryBytes = picked.bytes;
+          _newRegistryName = picked.name;
+        } else {
+          _newNocBytes = picked.bytes;
+          _newNocName = picked.name;
         }
       });
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Could not pick file: $e'),
-            backgroundColor: AppColors.error));
-      }
     }
   }
 
@@ -296,9 +252,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     if (_isSuspendedOrRejected &&
         _newPhotoBytes.isEmpty &&
         _newRegistryBytes == null &&
-        _newNocBytes == null &&
-        _newIdFrontBytes == null &&
-        _newIdBackBytes == null) {
+        _newNocBytes == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content:
             Text('Please update at least one photo or document before saving'),
@@ -376,23 +330,13 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
       }
 
       // 3. Upload documents
-      if (_newRegistryBytes != null ||
-          _newNocBytes != null ||
-          _newIdFrontBytes != null ||
-          _newIdBackBytes != null) {
+      if (_newRegistryBytes != null || _newNocBytes != null) {
         await ApiService.uploadDocuments(
           propertyId: _id,
           registryBytes: _newRegistryBytes,
           registryFileName: _newRegistryName,
           nocBytes: _newNocBytes,
           nocFileName: _newNocName,
-          idType: (_newIdFrontBytes != null || _newIdBackBytes != null)
-              ? _idType
-              : null,
-          idFrontBytes: _newIdFrontBytes,
-          idFrontFileName: _newIdFrontName,
-          idBackBytes: _newIdBackBytes,
-          idBackFileName: _newIdBackName,
         );
       }
 
@@ -594,10 +538,6 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                         const Text('• Registry / ownership document',
                             style: TextStyle(
                                 fontSize: 12, color: Color(0xFFBF360C))),
-                      if (!_idComplete)
-                        const Text('• ID proof (Aadhaar/PAN) — front & back',
-                            style: TextStyle(
-                                fontSize: 12, color: Color(0xFFBF360C))),
                       if (!_nocComplete)
                         const Text('• NOC document',
                             style: TextStyle(
@@ -641,26 +581,6 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
               onClearNoc: () => setState(() {
                 _newNocBytes = null;
                 _newNocName = null;
-              }),
-              idType: _idType,
-              onIdTypeChanged: (v) => setState(() => _idType = v),
-              hasIdFront: _hasIdFront,
-              hasIdBack: _hasIdBack,
-              isIdFrontLocked: _idFrontLocked,
-              isIdBackLocked: _idBackLocked,
-              newIdFrontPicked: _newIdFrontBytes != null,
-              newIdFrontName: _newIdFrontName,
-              newIdBackPicked: _newIdBackBytes != null,
-              newIdBackName: _newIdBackName,
-              onPickIdFront: () => _pickDocument('idFront'),
-              onPickIdBack: () => _pickDocument('idBack'),
-              onClearIdFront: () => setState(() {
-                _newIdFrontBytes = null;
-                _newIdFrontName = null;
-              }),
-              onClearIdBack: () => setState(() {
-                _newIdBackBytes = null;
-                _newIdBackName = null;
               }),
             ),
             const SizedBox(height: 20),
@@ -1119,13 +1039,6 @@ class _DocumentsSection extends StatelessWidget {
   final bool newRegistryPicked, newNocPicked;
   final String? newRegistryName, newNocName;
   final VoidCallback onPickRegistry, onPickNoc, onClearRegistry, onClearNoc;
-  // ID proof
-  final String idType;
-  final ValueChanged<String> onIdTypeChanged;
-  final bool hasIdFront, hasIdBack, isIdFrontLocked, isIdBackLocked;
-  final bool newIdFrontPicked, newIdBackPicked;
-  final String? newIdFrontName, newIdBackName;
-  final VoidCallback onPickIdFront, onPickIdBack, onClearIdFront, onClearIdBack;
 
   const _DocumentsSection({
     required this.hasRegistry,
@@ -1141,28 +1054,11 @@ class _DocumentsSection extends StatelessWidget {
     required this.onPickNoc,
     required this.onClearRegistry,
     required this.onClearNoc,
-    required this.idType,
-    required this.onIdTypeChanged,
-    required this.hasIdFront,
-    required this.hasIdBack,
-    required this.isIdFrontLocked,
-    required this.isIdBackLocked,
-    required this.newIdFrontPicked,
-    required this.newIdFrontName,
-    required this.newIdBackPicked,
-    required this.newIdBackName,
-    required this.onPickIdFront,
-    required this.onPickIdBack,
-    required this.onClearIdFront,
-    required this.onClearIdBack,
   });
 
   @override
   Widget build(BuildContext context) {
-    final idLabel = idType == 'pan' ? 'PAN' : 'Aadhaar';
-    final idDone =
-        (hasIdFront || newIdFrontPicked) && (hasIdBack || newIdBackPicked);
-    final allDone = hasRegistry && hasNoc && idDone;
+    final allDone = hasRegistry && hasNoc;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1199,7 +1095,6 @@ class _DocumentsSection extends StatelessWidget {
               ])),
         ]),
         const SizedBox(height: 14),
-
         _DocRow(
           label: 'Registry / Ownership Document',
           isUploaded: hasRegistry,
@@ -1220,59 +1115,6 @@ class _DocumentsSection extends StatelessWidget {
           isSuspended: isSuspended,
           onPick: onPickNoc,
           onClear: onClearNoc,
-        ),
-
-        // ── Owner ID Proof (Aadhaar / PAN) ─────────────────────
-        const SizedBox(height: 18),
-        const Divider(height: 1),
-        const SizedBox(height: 14),
-        Row(children: [
-          Icon(idDone ? Icons.verified_user : Icons.badge_outlined,
-              color: idDone ? AppColors.success : AppColors.error, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-              child: Text('Owner ID Proof',
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: idDone ? AppColors.textDark : AppColors.error))),
-        ]),
-        const SizedBox(height: 4),
-        const Text('Upload front & back of one ID — Aadhaar or PAN card.',
-            style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
-        const SizedBox(height: 10),
-        Row(children: [
-          _IdTypeChip(
-              label: 'Aadhaar Card',
-              selected: idType == 'aadhaar',
-              onTap: () => onIdTypeChanged('aadhaar')),
-          const SizedBox(width: 8),
-          _IdTypeChip(
-              label: 'PAN Card',
-              selected: idType == 'pan',
-              onTap: () => onIdTypeChanged('pan')),
-        ]),
-        const SizedBox(height: 10),
-        _DocRow(
-          label: '$idLabel — Front',
-          isUploaded: hasIdFront,
-          isLocked: isIdFrontLocked,
-          isPicked: newIdFrontPicked,
-          pickedName: newIdFrontName,
-          isSuspended: isSuspended,
-          onPick: onPickIdFront,
-          onClear: onClearIdFront,
-        ),
-        const SizedBox(height: 10),
-        _DocRow(
-          label: '$idLabel — Back',
-          isUploaded: hasIdBack,
-          isLocked: isIdBackLocked,
-          isPicked: newIdBackPicked,
-          pickedName: newIdBackName,
-          isSuspended: isSuspended,
-          onPick: onPickIdBack,
-          onClear: onClearIdBack,
         ),
       ]),
     );
@@ -1396,38 +1238,6 @@ class _DocRow extends StatelessWidget {
   }
 }
 
-// ── ID type selector chip ──────────────────────────────────────
-class _IdTypeChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  const _IdTypeChip(
-      {required this.label, required this.selected, required this.onTap});
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: selected ? AppColors.primary : AppColors.background,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-                color: selected ? AppColors.primary : AppColors.border),
-          ),
-          child: Text(label,
-              style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: selected ? Colors.white : AppColors.textDark)),
-        ),
-      ),
-    );
-  }
-}
-
 // ── Shared form widgets ────────────────────────────────────────
 class _Section extends StatelessWidget {
   final String title;
@@ -1524,7 +1334,7 @@ class _DropdownField extends StatelessWidget {
       required this.onChanged});
   @override
   Widget build(BuildContext context) => DropdownButtonFormField<String>(
-        value: options.contains(value) ? value : null,
+        initialValue: options.contains(value) ? value : null,
         decoration: InputDecoration(
           labelText: label,
           labelStyle: const TextStyle(fontSize: 13, color: AppColors.textMuted),
@@ -1566,8 +1376,7 @@ class _SwitchRow extends StatelessWidget {
           Switch(
               value: value,
               onChanged: onChanged,
-              activeTrackColor: AppColors.primary,
-              thumbColor: WidgetStateProperty.all(Colors.white)),
+              activeThumbColor: AppColors.primary),
         ],
       );
 }

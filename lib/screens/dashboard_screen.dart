@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import 'notification_screen.dart';
-import 'scheduled_visit_screen.dart';
+// import 'scheduled_visit_screen.dart'; // scheduled-visit feature disabled
 import 'message_screen.dart';
 import 'edit_property_screen.dart';
 
@@ -14,11 +14,11 @@ class DashboardTab extends StatefulWidget {
 }
 
 class _DashboardTabState extends State<DashboardTab> {
-  Map<String, dynamic> _stats      = {};
-  List<dynamic>        _properties = [];
-  int  _unreadMessages = 0;
-  int  _unreadNotifs   = 0;
-  bool _loading        = true;
+  Map<String, dynamic> _stats = {};
+  List<dynamic> _properties = [];
+  int _unreadMessages = 0;
+  int _unreadNotifs = 0;
+  bool _loading = true;
 
   @override
   void initState() {
@@ -37,12 +37,13 @@ class _DashboardTabState extends State<DashboardTab> {
       ]);
       if (mounted) {
         setState(() {
-          _stats          = results[0]['stats'] as Map<String, dynamic>? ?? {};
-          _properties     = results[1]['properties'] as List? ?? [];
-          _unreadNotifs   = results[2]['unreadCount'] as int? ?? 0;
-          final chats     = results[3]['chats'] as List? ?? [];
-          _unreadMessages = chats.fold(0, (s, c) => s + (c['unreadCount'] as int? ?? 0));
-          _loading        = false;
+          _stats = results[0]['stats'] as Map<String, dynamic>? ?? {};
+          _properties = results[1]['properties'] as List? ?? [];
+          _unreadNotifs = results[2]['unreadCount'] as int? ?? 0;
+          final chats = results[3]['chats'] as List? ?? [];
+          _unreadMessages =
+              chats.fold(0, (s, c) => s + (c['unreadCount'] as int? ?? 0));
+          _loading = false;
         });
       }
     } catch (_) {
@@ -78,8 +79,7 @@ class _DashboardTabState extends State<DashboardTab> {
                                     color: AppColors.textDark)),
                             Text('Overview & manage your listings',
                                 style: TextStyle(
-                                    fontSize: 13,
-                                    color: AppColors.textMuted)),
+                                    fontSize: 13, color: AppColors.textMuted)),
                           ],
                         ),
                       ),
@@ -169,21 +169,7 @@ class _DashboardTabState extends State<DashboardTab> {
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            Expanded(
-                              child: _ActionTile(
-                                icon: Icons.calendar_month_rounded,
-                                label: 'Visits',
-                                badge: null,
-                                color: AppColors.primary,
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) =>
-                                          const ScheduledVisitScreen()),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
+                            // Visits action tile removed — scheduled-visit feature disabled
                             Expanded(
                               child: _ActionTile(
                                 icon: Icons.chat_bubble_outline_rounded,
@@ -204,9 +190,8 @@ class _DashboardTabState extends State<DashboardTab> {
                               child: _ActionTile(
                                 icon: Icons.notifications_outlined,
                                 label: 'Alerts',
-                                badge: _unreadNotifs > 0
-                                    ? '$_unreadNotifs'
-                                    : null,
+                                badge:
+                                    _unreadNotifs > 0 ? '$_unreadNotifs' : null,
                                 color: const Color(0xFFE65100),
                                 onTap: () => Navigator.push(
                                   context,
@@ -282,11 +267,9 @@ class _DashboardTabState extends State<DashboardTab> {
                   SliverList(
                     delegate: SliverChildBuilderDelegate(
                       (_, i) {
-                        final prop =
-                            _properties[i] as Map<String, dynamic>;
+                        final prop = _properties[i] as Map<String, dynamic>;
                         return Padding(
-                          padding:
-                              const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
                           child: _DashboardPropertyCard(
                             property: prop,
                             onEdit: () async {
@@ -320,16 +303,15 @@ class _DashboardTabState extends State<DashboardTab> {
 class _DashboardPropertyCard extends StatelessWidget {
   final Map<String, dynamic> property;
   final VoidCallback onEdit;
-  const _DashboardPropertyCard(
-      {required this.property, required this.onEdit});
+  const _DashboardPropertyCard({required this.property, required this.onEdit});
 
   @override
   Widget build(BuildContext context) {
-    final status     = property['status']       as String? ?? 'under_review';
-    final isVerified = property['isVerified']   as bool?   ?? false;
-    final type       = property['propertyType'] as String? ?? '';
+    final status = property['status'] as String? ?? 'under_review';
+    final isVerified = property['isVerified'] as bool? ?? false;
+    final type = property['propertyType'] as String? ?? '';
 
-    Color  statusColor;
+    Color statusColor;
     String statusLabel;
     switch (status) {
       case 'active':
@@ -358,13 +340,13 @@ class _DashboardPropertyCard extends StatelessWidget {
         priceInfo = '₹${price.toStringAsFixed(0)}';
       }
     } else if (type == 'pg') {
-      final d  = property['pgDetails'] as Map<String, dynamic>?;
+      final d = property['pgDetails'] as Map<String, dynamic>?;
       final sp = d?['sharingPricing']?['singleRoom']?['price'];
       if (sp != null && (sp as num) > 0) {
         priceInfo = '₹$sp/mo';
       }
     } else if (type == 'guest') {
-      final d  = property['guestRoomDetails'] as Map<String, dynamic>?;
+      final d = property['guestRoomDetails'] as Map<String, dynamic>?;
       final sp = d?['pricing']?['singleRoom']?['price'];
       if (sp != null && (sp as num) > 0) {
         priceInfo = '₹$sp/night';
@@ -431,8 +413,7 @@ class _DashboardPropertyCard extends StatelessWidget {
                           child: Text(
                             property['location'] ?? '',
                             style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textMuted),
+                                fontSize: 12, color: AppColors.textMuted),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -457,13 +438,13 @@ class _DashboardPropertyCard extends StatelessWidget {
                 onPressed: onEdit,
                 icon: const Icon(Icons.edit_rounded, size: 16),
                 label: const Text('Edit',
-                    style: TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600)),
+                    style:
+                        TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                 style: TextButton.styleFrom(
                   foregroundColor: AppColors.primary,
                   backgroundColor: AppColors.primaryLight,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8)),
                 ),
@@ -477,9 +458,8 @@ class _DashboardPropertyCard extends StatelessWidget {
             children: [
               _StatusBadge(label: statusLabel, color: statusColor),
               if (isVerified)
-                _StatusBadge(
-                    label: '✓ Legally Verified',
-                    color: AppColors.success),
+                const _StatusBadge(
+                    label: '✓ Legally Verified', color: AppColors.success),
             ],
           ),
         ],
@@ -491,13 +471,12 @@ class _DashboardPropertyCard extends StatelessWidget {
 // ── Status badge ───────────────────────────────────────────────
 class _StatusBadge extends StatelessWidget {
   final String label;
-  final Color  color;
+  final Color color;
   const _StatusBadge({required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) => Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(6),
@@ -505,16 +484,14 @@ class _StatusBadge extends StatelessWidget {
         ),
         child: Text(label,
             style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: color)),
+                fontSize: 11, fontWeight: FontWeight.w700, color: color)),
       );
 }
 
 // ── Stat card ──────────────────────────────────────────────────
 class _StatCard extends StatelessWidget {
   final String label, value;
-  final Color  color, bg;
+  final Color color, bg;
   const _StatCard(
       {required this.label,
       required this.value,
@@ -534,9 +511,7 @@ class _StatCard extends StatelessWidget {
             children: [
               Text(value,
                   style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800,
-                      color: color)),
+                      fontSize: 26, fontWeight: FontWeight.w800, color: color)),
               const SizedBox(height: 2),
               Text(label,
                   style: TextStyle(
@@ -551,11 +526,11 @@ class _StatCard extends StatelessWidget {
 
 // ── Action tile ────────────────────────────────────────────────
 class _ActionTile extends StatelessWidget {
-  final IconData      icon;
-  final String        label;
-  final String?       badge;
-  final Color         color;
-  final VoidCallback  onTap;
+  final IconData icon;
+  final String label;
+  final String? badge;
+  final Color color;
+  final VoidCallback onTap;
   const _ActionTile(
       {required this.icon,
       required this.label,
@@ -567,8 +542,7 @@ class _ActionTile extends StatelessWidget {
   Widget build(BuildContext context) => GestureDetector(
         onTap: onTap,
         child: Container(
-          padding:
-              const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(14),
@@ -600,8 +574,7 @@ class _ActionTile extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.all(3),
                         decoration: const BoxDecoration(
-                            color: AppColors.error,
-                            shape: BoxShape.circle),
+                            color: AppColors.error, shape: BoxShape.circle),
                         child: Text(badge!,
                             style: const TextStyle(
                                 fontSize: 9,
@@ -614,9 +587,7 @@ class _ActionTile extends StatelessWidget {
               const SizedBox(height: 6),
               Text(label,
                   style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: color)),
+                      fontSize: 11, fontWeight: FontWeight.w600, color: color)),
             ],
           ),
         ),

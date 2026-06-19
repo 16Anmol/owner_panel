@@ -79,9 +79,10 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
         nocFileName: _nocName,
       );
       _snack('✅ Documents uploaded!', isError: false);
-      if (mounted)
+      if (mounted) {
         Navigator.push(context,
             MaterialPageRoute(builder: (_) => const SelfVerificationScreen()));
+      }
     } catch (e) {
       _snack(e.toString().replaceAll('Exception: ', ''), isError: true);
     } finally {

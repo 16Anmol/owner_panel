@@ -33,7 +33,7 @@ class _HomeTabState extends State<HomeTab> {
         ApiService.getNotifications(),
         ApiService.getChats(),
       ]);
-      if (mounted)
+      if (mounted) {
         setState(() {
           _owner = results[0]['owner'] as Map<String, dynamic>?;
           _properties = results[1]['properties'] as List? ?? [];
@@ -43,6 +43,7 @@ class _HomeTabState extends State<HomeTab> {
               chats.fold(0, (s, c) => s + (c['unreadCount'] as int? ?? 0));
           _loading = false;
         });
+      }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -344,7 +345,7 @@ class _PropertyCard extends StatelessWidget {
           Wrap(spacing: 6, runSpacing: 4, children: [
             _SmallBadge(label: statusLabel, color: statusColor),
             if (isVerified)
-              _SmallBadge(
+              const _SmallBadge(
                   label: '✓ Legally Verified', color: AppColors.success),
           ]),
         ])),

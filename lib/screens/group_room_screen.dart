@@ -139,7 +139,7 @@ class _GroupRoomScreenState extends State<GroupRoomScreen> {
         border: Border.all(color: AppColors.border),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withValues(alpha: 0.03),
               blurRadius: 8,
               offset: const Offset(0, 2))
         ],
@@ -162,8 +162,7 @@ class _GroupRoomScreenState extends State<GroupRoomScreen> {
                   color: AppColors.textDark)),
           const SizedBox(width: 8),
           Text(subtitle,
-              style: const TextStyle(
-                  fontSize: 12, color: AppColors.textMuted)),
+              style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
         ],
       ),
     );
@@ -193,7 +192,6 @@ class _GroupRoomScreenState extends State<GroupRoomScreen> {
                 ],
               ),
             ),
-
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
@@ -240,7 +238,6 @@ class _GroupRoomScreenState extends State<GroupRoomScreen> {
                 ),
               ),
             ),
-
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
               child: PrimaryButton(

@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import 'main_shell.dart';
-// ignore: unused_import
-import 'onboarding_payment_screen.dart'; // kept for re-enabling payment
+import 'payment_screen.dart';
 
 class OtpScreen extends StatefulWidget {
   final String email;
@@ -34,11 +33,16 @@ class _OtpScreenState extends State<OtpScreen> {
     try {
       await ApiService.verifyEmailOTP(
           email: widget.email, otp: _otpCtrl.text.trim());
-      if (mounted)
-        Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (_) => const MainShell()),
-            (_) => false); // payment paused
+      if (!mounted) return;
+      // New owners haven't paid the registration fee yet → payment screen.
+      final owner = await ApiService.getSavedOwner();
+      final paid = owner?['isPaid'] == true;
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+              builder: (_) => paid ? const MainShell() : const PaymentScreen()),
+          (_) => false);
     } catch (e) {
       setState(() {
         _error = e.toString().replaceAll('Exception: ', '');

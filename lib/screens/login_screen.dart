@@ -1,17 +1,12 @@
-// ignore_for_file: unused_element, unused_import, unused_field
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import 'main_shell.dart';
-// ignore: duplicate_ignore
-// ignore: unused_import
-import 'onboarding_payment_screen.dart'; // kept for re-enabling payment
 import 'otp_screen.dart';
 import 'forgot_password_screen.dart';
-import '../widgets/state_city_picker.dart';
-import '../utils/validators.dart';
-import '../utils/onboarding.dart';
+import 'payment_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -29,8 +24,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordCtrl = TextEditingController();
   final _nameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
-  String _state = '';
-  String _city = '';
 
   // ── Firebase Google Sign In (Web popup) ─────────────────
   Future<void> _signInWithGoogle() async {
@@ -50,14 +43,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // Get Firebase ID token → send to our backend
       final String? idToken = await firebaseUser.getIdToken();
-      if (idToken == null)
+      if (idToken == null) {
         throw Exception('Could not get authentication token');
+      }
 
       // Backend creates/finds owner in MongoDB
       await ApiService.googleAuth(idToken);
-      final me = await ApiService.getMe();
-      if (mounted)
-        routeAfterAuth(context, me['owner'] as Map<String, dynamic>?);
+      _goHome();
     } on FirebaseAuthException catch (e) {
       String msg;
       switch (e.code) {
@@ -114,17 +106,11 @@ class _LoginScreenState extends State<LoginScreen> {
           _showError('Please enter your name');
           return;
         }
-        if (!isValidName(name)) {
-          _showError('Please enter a valid name (letters only)');
-          return;
-        }
         final data = await ApiService.register(
           name: name,
           email: email,
           phone: phone,
           password: password,
-          state: _state,
-          city: _city,
         );
         _goToOTP(email, 'verify', devOtp: data['devOtp']?.toString());
       }
@@ -135,12 +121,18 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _goHome() {
+  Future<void> _goHome() async {
+    if (!mounted) return;
+    // Owners who haven't paid the one-time fee land on the payment screen
+    // first (with a "Pay later" option). Paid owners go straight in.
+    final owner = await ApiService.getSavedOwner();
+    final paid = owner?['isPaid'] == true;
     if (!mounted) return;
     Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (_) => const MainShell()),
-        (r) => false); // payment paused
+        MaterialPageRoute(
+            builder: (_) => paid ? const MainShell() : const PaymentScreen()),
+        (r) => false);
   }
 
   void _goToOTP(String email, String type, {String? devOtp}) {
@@ -222,6 +214,132 @@ class _LoginScreenState extends State<LoginScreen> {
               // ── Google Button ──
               _GoogleButton(loading: _gLoading, onTap: _signInWithGoogle),
 
+              const SizedBox(height: 20),
+
+              // ── Divider ──
+              const Row(children: [
+                Expanded(child: Divider(color: AppColors.border)),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 14),
+                  child: Text('or use email',
+                      style:
+                          TextStyle(fontSize: 12, color: AppColors.textLight)),
+                ),
+                Expanded(child: Divider(color: AppColors.border)),
+              ]),
+
+              const SizedBox(height: 20),
+
+              // ── Register only ──
+              if (!_isLogin) ...[
+                _InputField(
+                    label: 'Full Name',
+                    hint: 'Enter your full name',
+                    ctrl: _nameCtrl,
+                    icon: Icons.person_outline_rounded),
+                const SizedBox(height: 14),
+                _InputField(
+                    label: 'Phone Number',
+                    hint: 'Enter phone number',
+                    ctrl: _phoneCtrl,
+                    icon: Icons.phone_outlined,
+                    keyboard: TextInputType.phone),
+                const SizedBox(height: 14),
+              ],
+
+              // ── Email ──
+              _InputField(
+                  label: 'Email',
+                  hint: 'Enter your email',
+                  ctrl: _emailCtrl,
+                  icon: Icons.email_outlined,
+                  keyboard: TextInputType.emailAddress),
+              const SizedBox(height: 14),
+
+              // ── Password ──
+              _PasswordInput(
+                  ctrl: _passwordCtrl,
+                  obscure: _obscure,
+                  onToggle: () => setState(() => _obscure = !_obscure)),
+
+              // ── Forgot Password ──
+              if (_isLogin) ...[
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: GestureDetector(
+                    onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const ForgotPasswordScreen())),
+                    child: const Text('Forgot Password?',
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 28),
+
+              // ── Submit Button ──
+              SizedBox(
+                width: double.infinity,
+                height: 54,
+                child: ElevatedButton(
+                  onPressed: _loading ? null : _submit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                    elevation: 0,
+                  ),
+                  child: _loading
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2.5))
+                      : Text(_isLogin ? 'Sign In' : 'Create Account',
+                          style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white)),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // ── Toggle ──
+              Center(
+                child: GestureDetector(
+                  onTap: () => setState(() {
+                    _isLogin = !_isLogin;
+                    _emailCtrl.clear();
+                    _passwordCtrl.clear();
+                  }),
+                  child: RichText(
+                    text: TextSpan(
+                      style: const TextStyle(fontSize: 14),
+                      children: [
+                        TextSpan(
+                          text: _isLogin
+                              ? "Don't have an account? "
+                              : 'Already have an account? ',
+                          style: const TextStyle(color: AppColors.textMuted),
+                        ),
+                        TextSpan(
+                          text: _isLogin ? 'Register' : 'Sign In',
+                          style: const TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(height: 24),
             ],
           ),
@@ -304,7 +422,8 @@ class _InputField extends StatelessWidget {
     required this.hint,
     required this.ctrl,
     required this.icon,
-  }) : keyboard = null;
+    this.keyboard,
+  });
 
   @override
   Widget build(BuildContext context) {

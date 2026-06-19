@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:record/record.dart';
-import 'package:audioplayers/audioplayers.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
+import '../services/platform/media.dart';
+import '../services/platform/file_picker_helper.dart';
 
 // ══════════════════════════════════════════════════════════════
 //  Owner Chat List
@@ -88,6 +86,7 @@ class _MessageScreenState extends State<MessageScreen> {
                                   chatId: c['_id'] as String,
                                   customerName:
                                       cust['name'] as String? ?? 'Customer',
+                                  customerId: cust['_id'] as String? ?? '',
                                   plotName:
                                       prop['propertyName'] as String? ?? 'Plot',
                                 ),
@@ -244,11 +243,12 @@ class _EmptyChats extends StatelessWidget {
 //  Owner Chat Screen (conversation view)
 // ══════════════════════════════════════════════════════════════
 class OwnerChatScreen extends StatefulWidget {
-  final String chatId, customerName, plotName;
+  final String chatId, customerName, plotName, customerId;
   const OwnerChatScreen({
     super.key,
     required this.chatId,
     required this.customerName,
+    required this.customerId,
     required this.plotName,
   });
   @override
@@ -263,16 +263,15 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
   bool _loading = false;
   bool _sending = false;
   bool _uploading = false;
-  String _uploadLabel = 'Uploading…';
+  // ── Audio recording ──────────────────────────────────────────
+  bool _recording = false;
+  bool _sendingAudio = false;
+  final VoiceRecorderHandle _recorder = createVoiceRecorder();
+  Timer? _recordTimer;
+  int _recordSeconds = 0;
   String? _blocked;
   String? _lastTs;
   Timer? _timer;
-
-  // Voice recording
-  final AudioRecorder _recorder = AudioRecorder();
-  bool _recording = false;
-  int _recSecs = 0;
-  Timer? _recTimer;
 
   @override
   void initState() {
@@ -285,78 +284,11 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
   @override
   void dispose() {
     _timer?.cancel();
-    _recTimer?.cancel();
-    _recorder.dispose();
     _ctrl.removeListener(_checkPhone);
     _ctrl.dispose();
+    _recordTimer?.cancel();
     _scroll.dispose();
     super.dispose();
-  }
-
-  // ── Record & send voice message ───────────────────────────────
-  Future<void> _toggleRecord() async {
-    if (_recording) {
-      final path = await _recorder.stop();
-      _recTimer?.cancel();
-      if (mounted) setState(() => _recording = false);
-      if (path == null) return;
-      try {
-        final bytes = await XFile(path).readAsBytes();
-        if (mounted)
-          setState(() {
-            _uploading = true;
-            _uploadLabel = 'Processing audio…';
-          });
-        final res = await ApiService.ownerUploadChatAudio(
-            chatId: widget.chatId,
-            bytes: bytes,
-            fileName: 'voice.webm',
-            duration: _recSecs);
-        final msg = res['message'] as Map<String, dynamic>;
-        if (mounted) {
-          setState(() {
-            final idx = _msgs.indexWhere((e) => e['_id'] == msg['_id']);
-            if (idx < 0) _msgs.add(msg);
-            _lastTs = msg['createdAt'] as String?;
-          });
-          _scrollToBottom();
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Voice send failed: $e'),
-              backgroundColor: AppColors.error));
-        }
-      } finally {
-        if (mounted) setState(() => _uploading = false);
-      }
-    } else {
-      try {
-        if (!await _recorder.hasPermission()) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Microphone permission denied')));
-          }
-          return;
-        }
-        await _recorder.start(const RecordConfig(encoder: AudioEncoder.opus),
-            path: 'voice');
-        if (mounted)
-          setState(() {
-            _recording = true;
-            _recSecs = 0;
-          });
-        _recTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-          if (mounted) setState(() => _recSecs++);
-        });
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Could not start recording: $e'),
-              backgroundColor: AppColors.error));
-        }
-      }
-    }
   }
 
   // ── Phone detection ───────────────────────────────────────────
@@ -434,28 +366,25 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
 
   // ── Pick & upload photo ───────────────────────────────────────
   Future<void> _pickPhoto() async {
-    Uint8List bytes;
+    List<int> bytes;
     String name;
     try {
-      final picker = ImagePicker();
-      final xf =
-          await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
-      if (xf == null) return;
-      bytes = await xf.readAsBytes();
-      name = xf.name;
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Could not pick photo: $e'),
-            backgroundColor: AppColors.error));
-      }
+      final picked = await pickImages(multiple: false);
+      if (picked.isEmpty) return;
+      bytes = picked.first.bytes;
+      final raw = picked.first.name;
+      final ext = raw.contains('.')
+          ? raw.substring(raw.lastIndexOf('.')).toLowerCase()
+          : '.jpg';
+      final safeExt = ['.jpg', '.jpeg', '.png', '.webp', '.gif'].contains(ext)
+          ? ext
+          : '.jpg';
+      name = 'photo_${DateTime.now().millisecondsSinceEpoch}$safeExt';
+    } catch (_) {
       return;
     }
 
-    setState(() {
-      _uploading = true;
-      _uploadLabel = 'Uploading photo…';
-    });
+    setState(() => _uploading = true);
     try {
       final res = await ApiService.ownerUploadChatPhoto(
           chatId: widget.chatId, bytes: bytes, fileName: name);
@@ -479,7 +408,80 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
     }
   }
 
-  // ── Send text ─────────────────────────────────────────────────
+  // ── Audio recording methods ─────────────────────────────────
+  void _voiceUnsupported() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content:
+            Text('Voice messages are supported on the web version for now.')));
+  }
+
+  Future<void> _startRecording() async {
+    if (!_recorder.isSupported) {
+      _voiceUnsupported();
+      return;
+    }
+    if (_recording) {
+      await _stopRecording();
+      return;
+    }
+    final started = await _recorder.start();
+    if (!started) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'Microphone access denied. Allow mic in browser settings.')));
+      }
+      return;
+    }
+    _recordSeconds = 0;
+    _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _recordSeconds++);
+    });
+    setState(() => _recording = true);
+  }
+
+  Future<void> _stopRecording() async {
+    _recordTimer?.cancel();
+    setState(() {
+      _recording = false;
+      _sendingAudio = true;
+    });
+    try {
+      final bytes = await _recorder.stop();
+      if (bytes == null || bytes.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('No audio recorded')));
+        }
+        return;
+      }
+      final fileName = 'voice_${DateTime.now().millisecondsSinceEpoch}.webm';
+      await ApiService.ownerUploadChatAudio(
+          chatId: widget.chatId, bytes: bytes, fileName: fileName);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Failed to send audio: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _sendingAudio = false);
+    }
+  }
+
+  void _cancelRecording() {
+    _recordTimer?.cancel();
+    // Stop and discard the recording (releases the mic).
+    _recorder.stop();
+    setState(() {
+      _recording = false;
+      _recordSeconds = 0;
+    });
+  }
+
+  String _fmtRec(int s) =>
+      '${(s ~/ 60).toString().padLeft(2, "0")}:${(s % 60).toString().padLeft(2, "0")}';
+
   Future<void> _send() async {
     final text = _ctrl.text.trim();
     if (text.isEmpty || _blocked != null) return;
@@ -558,64 +560,6 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
     }
   }
 
-  // ── Edit message ──────────────────────────────────────────────
-  Future<void> _editMsg(String msgId, String currentText) async {
-    final ctrl = TextEditingController(text: currentText);
-    final newText = await showDialog<String>(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Edit Message',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          maxLines: null,
-          decoration: InputDecoration(
-            hintText: 'Edit your message',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textMuted)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, ctrl.text.trim()),
-            child: const Text('Save',
-                style: TextStyle(
-                    color: AppColors.primary, fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
-    if (newText == null ||
-        newText.isEmpty ||
-        newText == currentText ||
-        !mounted) {
-      return;
-    }
-    try {
-      final res = await ApiService.ownerEditMessage(
-          chatId: widget.chatId, msgId: msgId, newText: newText);
-      final updated = res['message'] as Map<String, dynamic>;
-      if (mounted) {
-        setState(() {
-          final idx = _msgs.indexWhere((m) => m['_id'] == msgId);
-          if (idx >= 0) _msgs[idx] = updated;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(e.toString().replaceAll('Exception: ', '')),
-            backgroundColor: AppColors.error));
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -655,6 +599,23 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
         ],
       ),
       body: Column(children: [
+        // Info banner
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          color: AppColors.primaryLight,
+          child: const Row(children: [
+            Icon(Icons.info_outline_rounded,
+                size: 14, color: AppColors.primary),
+            SizedBox(width: 8),
+            Expanded(
+                child: Text(
+              'Phone numbers are blocked. Share text, images and links safely.',
+              style: TextStyle(
+                  fontSize: 11, color: AppColors.primary, height: 1.3),
+            )),
+          ]),
+        ),
+
         // Messages
         Expanded(
           child: _loading
@@ -688,18 +649,21 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
                         final isDelFm = m['deletedForSender'] as bool? ?? false;
                         if (isDelFm) return const SizedBox.shrink();
                         final isDel = m['deletedForEveryone'] as bool? ?? false;
+                        final bubble = _OwnerBubble(msg: m, isMe: isMe);
                         return Align(
                           alignment: isMe
                               ? Alignment.centerRight
                               : Alignment.centerLeft,
-                          child: _HoverMsgWrapper(
-                            isMe: isMe,
-                            isDeleted: isDel,
-                            onEdit: () => _editMsg(
-                                m['_id'] as String, m['text'] as String? ?? ''),
-                            onDelete: () => _deleteMsg(m['_id'] as String),
-                            child: _OwnerBubble(msg: m, isMe: isMe),
-                          ),
+                          // Only show delete icon on OWN messages
+                          child: isMe
+                              ? _HoverMsgWrapper(
+                                  isMe: isMe,
+                                  isDeleted: isDel,
+                                  onDelete: () =>
+                                      _deleteMsg(m['_id'] as String),
+                                  child: bubble,
+                                )
+                              : bubble,
                         );
                       },
                     ),
@@ -710,38 +674,18 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
           Container(
             color: AppColors.primaryLight,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(children: [
-              const SizedBox(
+            child: const Row(children: [
+              SizedBox(
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(
                       color: AppColors.primary, strokeWidth: 2)),
-              const SizedBox(width: 10),
-              Text(_uploadLabel,
-                  style: const TextStyle(
+              SizedBox(width: 10),
+              Text('Uploading photo…',
+                  style: TextStyle(
                       fontSize: 13,
                       color: AppColors.primary,
                       fontWeight: FontWeight.w600)),
-            ]),
-          ),
-
-        // Recording indicator
-        if (_recording)
-          Container(
-            color: const Color(0xFFFFEBEE),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(children: [
-              const Icon(Icons.fiber_manual_record,
-                  color: AppColors.error, size: 13),
-              const SizedBox(width: 8),
-              Text('Recording…  ${_recSecs}s',
-                  style: const TextStyle(
-                      fontSize: 13,
-                      color: AppColors.error,
-                      fontWeight: FontWeight.w600)),
-              const Spacer(),
-              const Text('tap ■ to send',
-                  style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
             ]),
           ),
 
@@ -766,6 +710,32 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
             ]),
           ),
 
+        // Recording indicator
+        if (_recording)
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(children: [
+              Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                      color: AppColors.error, shape: BoxShape.circle)),
+              const SizedBox(width: 8),
+              Text('Recording… ${_fmtRec(_recordSeconds)}',
+                  style: const TextStyle(
+                      color: AppColors.error,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600)),
+              const Spacer(),
+              GestureDetector(
+                onTap: _cancelRecording,
+                child: const Text('Cancel',
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+              ),
+            ]),
+          ),
+
         // Input bar
         Container(
           color: Colors.white,
@@ -786,26 +756,6 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
                 ),
                 child: const Icon(Icons.add_photo_alternate_rounded,
                     size: 20, color: AppColors.primary),
-              ),
-            ),
-            const SizedBox(width: 8),
-
-            // Mic / record button
-            GestureDetector(
-              onTap: _uploading ? null : _toggleRecord,
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: _recording ? AppColors.error : AppColors.primaryLight,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: (_recording ? AppColors.error : AppColors.primary)
-                          .withValues(alpha: 0.3)),
-                ),
-                child: Icon(_recording ? Icons.stop_rounded : Icons.mic_rounded,
-                    size: 20,
-                    color: _recording ? Colors.white : AppColors.primary),
               ),
             ),
             const SizedBox(width: 8),
@@ -841,35 +791,78 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
             const SizedBox(width: 8),
 
             // Send button
-            GestureDetector(
-              onTap: (_sending || _blocked != null) ? null : _send,
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: (_blocked != null || _sending)
-                      ? AppColors.textLight
-                      : AppColors.primary,
-                  shape: BoxShape.circle,
-                  boxShadow: (_blocked != null)
-                      ? []
-                      : [
-                          BoxShadow(
-                              color: AppColors.primary.withValues(alpha: 0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 3))
-                        ],
-                ),
-                child: _sending
-                    ? const Center(
-                        child: SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                                color: Colors.white, strokeWidth: 2)))
-                    : const Icon(Icons.send_rounded,
-                        color: Colors.white, size: 20),
-              ),
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _ctrl,
+              builder: (_, val, __) {
+                final hasText = val.text.trim().isNotEmpty;
+                if (hasText) {
+                  return GestureDetector(
+                    onTap: (_sending || _blocked != null) ? null : _send,
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: (_blocked != null || _sending)
+                            ? AppColors.textLight
+                            : AppColors.primary,
+                        shape: BoxShape.circle,
+                        boxShadow: (_blocked != null)
+                            ? []
+                            : [
+                                BoxShadow(
+                                    color: AppColors.primary
+                                        .withValues(alpha: 0.3),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 3))
+                              ],
+                      ),
+                      child: _sending
+                          ? const Center(
+                              child: SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                      color: Colors.white, strokeWidth: 2)))
+                          : const Icon(Icons.send_rounded,
+                              color: Colors.white, size: 20),
+                    ),
+                  );
+                }
+                return GestureDetector(
+                  onTap: _recording ? _stopRecording : _startRecording,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: _recording ? AppColors.error : AppColors.primary,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                            color: (_recording
+                                    ? AppColors.error
+                                    : AppColors.primary)
+                                .withValues(alpha: 0.35),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3))
+                      ],
+                    ),
+                    child: _sendingAudio
+                        ? const Center(
+                            child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                    color: Colors.white, strokeWidth: 2)))
+                        : Icon(
+                            _recording
+                                ? Icons.stop_circle_rounded
+                                : Icons.mic_rounded,
+                            color: Colors.white,
+                            size: 22),
+                  ),
+                );
+              },
             ),
           ]),
         ),
@@ -883,13 +876,11 @@ class _OwnerChatScreenState extends State<OwnerChatScreen> {
 // ══════════════════════════════════════════════════════════════
 class _HoverMsgWrapper extends StatefulWidget {
   final Widget child;
-  final VoidCallback onEdit;
   final VoidCallback onDelete;
   final bool isMe;
   final bool isDeleted;
   const _HoverMsgWrapper({
     required this.child,
-    required this.onEdit,
     required this.onDelete,
     required this.isMe,
     this.isDeleted = false,
@@ -933,56 +924,18 @@ class _HoverMsgWrapperState extends State<_HoverMsgWrapper>
     });
   }
 
-  void _openMenu() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (sheetCtx) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const SizedBox(height: 8),
-          ListTile(
-            leading: const Icon(Icons.edit_outlined, color: AppColors.primary),
-            title: const Text('Edit message',
-                style: TextStyle(
-                    fontWeight: FontWeight.w600, color: AppColors.textDark)),
-            onTap: () {
-              Navigator.pop(sheetCtx);
-              widget.onEdit();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.delete_outline_rounded,
-                color: AppColors.error),
-            title: const Text('Delete for everyone',
-                style: TextStyle(
-                    fontWeight: FontWeight.w600, color: AppColors.error)),
-            onTap: () {
-              Navigator.pop(sheetCtx);
-              widget.onDelete();
-            },
-          ),
-          const SizedBox(height: 8),
-        ]),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (widget.isDeleted) return widget.child;
     final show = _hovered || _showMob;
 
-    // Only the sender sees the actions button — never on the other person's
-    // messages. Tapping it opens a menu with exactly two options.
-    final trashBtn = (show && widget.isMe)
+    final trashBtn = show
         ? FadeTransition(
             opacity: _fade,
             child: GestureDetector(
               onTap: () {
                 _hide();
-                _openMenu();
+                widget.onDelete();
               },
               child: Container(
                 width: 30,
@@ -1002,8 +955,8 @@ class _HoverMsgWrapperState extends State<_HoverMsgWrapper>
                     )
                   ],
                 ),
-                child: const Icon(Icons.more_vert_rounded,
-                    size: 18, color: AppColors.textMuted),
+                child: const Icon(Icons.delete_outline_rounded,
+                    size: 16, color: Color(0xFFC62828)),
               ),
             ),
           )
@@ -1049,8 +1002,8 @@ class _OwnerBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = msg['text'] as String? ?? '';
     final imageUrl = msg['imageUrl'] as String?;
-    final audioUrl = msg['audioUrl'] as String?;
     final linkUrl = msg['linkUrl'] as String?;
+    final audioUrl = msg['audioUrl'] as String?;
     final isDeleted = msg['deletedForEveryone'] as bool? ?? false;
     final isEdited = msg['isEdited'] as bool? ?? false;
     final ts = _fmt(msg['createdAt'] as String?);
@@ -1083,21 +1036,13 @@ class _OwnerBubble extends StatelessWidget {
         crossAxisAlignment:
             isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          if (audioUrl != null && audioUrl.isNotEmpty)
-            _VoiceMessage(
-              url: audioUrl.startsWith('http')
-                  ? audioUrl
-                  : 'http://localhost:5000$audioUrl',
-              isMe: isMe,
-              durationSecs: (msg['audioDuration'] as num?)?.toInt() ?? 0,
-            ),
           if (imageUrl != null && imageUrl.isNotEmpty)
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: Image.network(
                 imageUrl.startsWith('http')
                     ? imageUrl
-                    : 'http://localhost:5000$imageUrl',
+                    : '${ApiService.mediaBase}$imageUrl',
                 width: 200,
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => const Icon(
@@ -1105,7 +1050,15 @@ class _OwnerBubble extends StatelessWidget {
                     color: AppColors.textLight),
               ),
             ),
-          if (linkUrl != null && linkUrl.isNotEmpty)
+          // Audio bubble
+          if (audioUrl != null && audioUrl.isNotEmpty) ...[
+            _OwnerAudioBubble(
+              url: audioUrl.startsWith('http')
+                  ? audioUrl
+                  : '${ApiService.mediaBase}$audioUrl',
+              isMe: isMe,
+            ),
+          ] else if (linkUrl != null && linkUrl.isNotEmpty)
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -1179,125 +1132,150 @@ class _OwnerBubble extends StatelessWidget {
   }
 }
 
-// ── Voice message player ─────────────────────────────────────
-class _VoiceMessage extends StatefulWidget {
+// ══════════════════════════════════════════════════════════════
+//  Owner Audio Bubble
+// ══════════════════════════════════════════════════════════════
+class _OwnerAudioBubble extends StatefulWidget {
   final String url;
   final bool isMe;
-  final int durationSecs;
-  const _VoiceMessage(
-      {required this.url, required this.isMe, this.durationSecs = 0});
+  const _OwnerAudioBubble({required this.url, required this.isMe});
   @override
-  State<_VoiceMessage> createState() => _VoiceMessageState();
+  State<_OwnerAudioBubble> createState() => _OwnerAudioBubbleState();
 }
 
-class _VoiceMessageState extends State<_VoiceMessage> {
-  final AudioPlayer _player = AudioPlayer();
+class _OwnerAudioBubbleState extends State<_OwnerAudioBubble> {
+  final AudioPlayerHandle _audio = createAudioPlayer();
   bool _playing = false;
-  Duration _dur = Duration.zero;
-  Duration _pos = Duration.zero;
-  final List<StreamSubscription> _subs = [];
+  double _progress = 0.0;
+  double _duration = 0.0;
+  Timer? _ticker;
 
   @override
   void initState() {
     super.initState();
-    _subs.add(_player.onPlayerStateChanged.listen((s) {
-      if (mounted) setState(() => _playing = s == PlayerState.playing);
-    }));
-    _subs.add(_player.onDurationChanged.listen((d) {
-      if (mounted) setState(() => _dur = d);
-    }));
-    _subs.add(_player.onPositionChanged.listen((p) {
-      if (mounted) setState(() => _pos = p);
-    }));
-    _subs.add(_player.onPlayerComplete.listen((_) {
+    _audio.onLoaded = (d) {
+      if (mounted) setState(() => _duration = d);
+    };
+    _audio.onEnded = () {
+      _ticker?.cancel();
       if (mounted)
         setState(() {
           _playing = false;
-          _pos = Duration.zero;
+          _progress = 0.0;
         });
-    }));
+    };
+    _audio.load(widget.url);
   }
 
   @override
   void dispose() {
-    for (final s in _subs) {
-      s.cancel();
-    }
-    _player.dispose();
+    _ticker?.cancel();
+    _audio.pause();
+    _audio.dispose();
     super.dispose();
   }
 
-  Future<void> _toggle() async {
+  void _toggle() {
+    if (!_audio.isSupported) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content:
+              Text('Voice playback is supported on the web version for now.')));
+      return;
+    }
     if (_playing) {
-      await _player.pause();
+      _audio.pause();
+      _ticker?.cancel();
+      setState(() => _playing = false);
     } else {
-      await _player.play(UrlSource(widget.url));
+      _audio.play();
+      // Poll every 80ms — most reliable approach for Flutter web
+      _ticker = Timer.periodic(const Duration(milliseconds: 80), (_) {
+        if (!mounted) {
+          _ticker?.cancel();
+          return;
+        }
+        if (_duration > 0) {
+          final t = _audio.currentTime;
+          if (t != (_progress * _duration)) {
+            setState(() => _progress = (t / _duration).clamp(0.0, 1.0));
+          }
+        }
+      });
+      setState(() => _playing = true);
     }
   }
 
-  String _fmt(Duration d) {
-    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
-    return '${d.inMinutes}:$s';
+  String _fmt(double s) {
+    if (!s.isFinite || s <= 0) return '0:00';
+    final t = s.toInt();
+    return '${(t ~/ 60)}:${(t % 60).toString().padLeft(2, "0")}';
   }
 
   @override
   Widget build(BuildContext context) {
-    final fg = widget.isMe ? Colors.white : AppColors.primary;
     final bg = widget.isMe ? AppColors.primary : Colors.white;
-    // Prefer the player's reported duration; fall back to the stored recording
-    // duration (recorded WebM often reports no duration in the browser).
-    final totalMs = _dur.inMilliseconds > 0
-        ? _dur.inMilliseconds
-        : widget.durationSecs * 1000;
-    final progress =
-        totalMs > 0 ? (_pos.inMilliseconds / totalMs).clamp(0.0, 1.0) : 0.0;
+    final muted =
+        widget.isMe ? Colors.white.withValues(alpha: 0.6) : AppColors.textMuted;
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       width: 220,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-            color: widget.isMe ? Colors.transparent : AppColors.border),
+        borderRadius: BorderRadius.circular(16),
+        border: widget.isMe ? null : Border.all(color: AppColors.border),
       ),
       child: Row(children: [
         GestureDetector(
           onTap: _toggle,
-          child: Icon(
-              _playing ? Icons.pause_circle_filled : Icons.play_circle_fill,
-              size: 34,
-              color: fg),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 4,
-                backgroundColor: fg.withValues(alpha: 0.25),
-                valueColor: AlwaysStoppedAnimation(fg),
-              ),
+          child: Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: widget.isMe
+                  ? Colors.white.withValues(alpha: 0.25)
+                  : AppColors.primaryLight,
+              shape: BoxShape.circle,
             ),
-            const SizedBox(height: 5),
-            Row(children: [
-              Icon(Icons.mic_rounded,
-                  size: 13, color: fg.withValues(alpha: 0.8)),
-              const SizedBox(width: 4),
-              Text(
-                  _pos > Duration.zero
-                      ? _fmt(_pos)
-                      : (totalMs > 0
-                          ? _fmt(Duration(milliseconds: totalMs))
-                          : 'Voice message'),
-                  style: TextStyle(
-                      fontSize: 11, color: fg.withValues(alpha: 0.9))),
-            ]),
-          ]),
+            child: Icon(
+                _playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                color: widget.isMe ? Colors.white : AppColors.primary,
+                size: 22),
+          ),
         ),
+        const SizedBox(width: 8),
+        Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 2.5,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+              activeTrackColor: widget.isMe ? Colors.white : AppColors.primary,
+              inactiveTrackColor: muted,
+              thumbColor: widget.isMe ? Colors.white : AppColors.primary,
+              overlayColor: (widget.isMe ? Colors.white : AppColors.primary)
+                  .withValues(alpha: 0.2),
+            ),
+            child: Slider(
+              value: _progress.clamp(0.0, 1.0),
+              onChanged: (v) {
+                if (!_audio.isSupported || _duration <= 0) return;
+                _audio.seek(v * _duration);
+                setState(() => _progress = v);
+              },
+            ),
+          ),
+          Row(children: [
+            Icon(Icons.mic_rounded, size: 11, color: muted),
+            const SizedBox(width: 3),
+            Text(
+              _playing ? _fmt(_audio.currentTime) : _fmt(_duration),
+              style: TextStyle(fontSize: 10, color: muted),
+            ),
+          ]),
+        ])),
       ]),
     );
   }

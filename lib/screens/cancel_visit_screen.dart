@@ -71,13 +71,11 @@ class _CancelVisitScreenState extends State<CancelVisitScreen> {
                         fillColor: Colors.white,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide:
-                              const BorderSide(color: AppColors.border),
+                          borderSide: const BorderSide(color: AppColors.border),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide:
-                              const BorderSide(color: AppColors.border),
+                          borderSide: const BorderSide(color: AppColors.border),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -138,7 +136,8 @@ class _CancelVisitScreenState extends State<CancelVisitScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 64, height: 64,
+              width: 64,
+              height: 64,
               decoration: const BoxDecoration(
                   color: Color(0xFFFFEBEE), shape: BoxShape.circle),
               child: const Icon(Icons.cancel_outlined,

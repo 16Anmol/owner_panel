@@ -6,7 +6,28 @@ import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://localhost:5000/api';
+  // Pass --dart-define=API_BASE_URL=http://<pc-lan-ip>:5000/api when testing
+  // on a real phone, or your Render https URL once deployed.
+  // ════════════════════════════════════════════════════════════════
+  //  >>> SET YOUR BACKEND URL HERE before building the release APK <<<
+  //  Must END WITH /api, e.g.  https://lexnland-backend.onrender.com/api
+  //  Leave localhost for your own emulator/web testing.
+  //  You can also override without editing:
+  //    flutter build apk --release --dart-define=API_BASE_URL=https://.../api
+  // ════════════════════════════════════════════════════════════════
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://localhost:5000/api',
+  );
+
+  /// Backend origin without the trailing "/api". Used to turn relative media
+  /// paths from the server (e.g. "/uploads/photos/x.jpg") into full URLs.
+  static String get mediaBase {
+    var b = baseUrl;
+    if (b.endsWith('/')) b = b.substring(0, b.length - 1);
+    if (b.endsWith('/api')) b = b.substring(0, b.length - 4);
+    return b;
+  }
 
   static Future<String?> getToken() async {
     final p = await SharedPreferences.getInstance();
@@ -456,6 +477,36 @@ class ApiService {
   static Future<Map<String, dynamic>> paymentStatus() async {
     final res = await http.get(Uri.parse('$baseUrl/auth/payment/status'),
         headers: await _headers());
+    return _handle(res);
+  }
+
+  // ── RAZORPAY STANDARD CHECKOUT (order + verify) ───────────
+  /// Creates a Razorpay order for the one-time owner registration fee.
+  /// Returns { orderId, amount, currency, keyId } or { alreadyPaid: true }.
+  static Future<Map<String, dynamic>> createPaymentOrder() async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/auth/payment/create-order'),
+      headers: await _headers(),
+    );
+    return _handle(res);
+  }
+
+  /// Verifies the payment signature server-side. On success the backend
+  /// marks the owner as paid. Returns { isPaid: true } when verified.
+  static Future<Map<String, dynamic>> verifyPayment({
+    required String orderId,
+    required String paymentId,
+    required String signature,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/auth/payment/verify'),
+      headers: await _headers(),
+      body: jsonEncode({
+        'razorpay_order_id': orderId,
+        'razorpay_payment_id': paymentId,
+        'razorpay_signature': signature,
+      }),
+    );
     return _handle(res);
   }
 

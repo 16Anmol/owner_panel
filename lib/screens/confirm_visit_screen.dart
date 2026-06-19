@@ -45,7 +45,7 @@ class ConfirmVisitScreen extends StatelessWidget {
                     Container(
                       width: 80,
                       height: 80,
-                      decoration: BoxDecoration(
+                      decoration: const BoxDecoration(
                         color: AppColors.primaryLight,
                         shape: BoxShape.circle,
                       ),
@@ -145,8 +145,9 @@ class ConfirmVisitScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 64, height: 64,
-              decoration: BoxDecoration(
+              width: 64,
+              height: 64,
+              decoration: const BoxDecoration(
                   color: AppColors.successBg, shape: BoxShape.circle),
               child: const Icon(Icons.check_circle_rounded,
                   color: AppColors.success, size: 36),
